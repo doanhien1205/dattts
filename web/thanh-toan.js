@@ -8,6 +8,9 @@
   const PLAN_LABEL = { personal: 'Cá nhân', unlimited: 'Không giới hạn', internal: 'Nội bộ' };
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const POLL_MS = 2000, POLL_MAX_MS = 60000;
+  // Polar chỉ chuyển về trang này SAU khi phiên được xác nhận → vẫn "open" sau vài lần hỏi nghĩa là chưa ai trả tiền
+  // (mở lại từ dấu trang, nút Back, đường dẫn chia sẻ…).
+  const OPEN_POLLS_MAX = 3;
 
   class ApiError extends Error { constructor(m, code, status) { super(m); this.code = code; this.status = status; } }
   async function api(path, opts = {}) {
@@ -49,6 +52,9 @@
            <li>Dán key vào ô bên dưới, hoặc bấm “Nhập API key” trong phòng thu.</li>
            <li>Hoá đơn và việc quản lý, huỷ gói nằm trong cổng khách hàng Polar (nút “Quản lý gói” trong phòng thu).</li>
          </ol>`, studio],
+      unpaid: ['bad', 'Chưa thanh toán', 'Phiên này chưa được thanh toán',
+        `<p class="lead">Phiên thanh toán này vẫn đang mở và chưa có khoản nào bị trừ, nên Polar chưa gửi API key. Nếu bạn đã đóng trang thanh toán giữa chừng, hãy chọn gói lại ở bảng giá. Nếu bạn vừa trả tiền xong, bấm “Kiểm tra lại” sau ít giây.</p>`,
+        '<a class="btn btn-primary" href="./#bang-gia">Chọn gói</a> <button class="btn btn-ghost" type="button" data-retry>Kiểm tra lại</button>'],
       expired: ['bad', 'Hết hạn', 'Phiên thanh toán đã hết hạn',
         `<p class="lead">Phiên này đã quá thời gian chờ và chưa có khoản nào bị trừ. Bạn có thể tạo phiên mới từ bảng giá.</p>`, '<a class="btn btn-primary" href="./#bang-gia">Mua lại</a>'],
       failed: ['bad', 'Thất bại', 'Thanh toán chưa thành công',
@@ -57,6 +63,8 @@
         `<p class="lead">Việc xác nhận lâu hơn bình thường. Bạn không cần thanh toán lại: Polar sẽ gửi email kèm API key ngay khi giao dịch hoàn tất. Bấm “Kiểm tra lại” sau ít phút, hoặc liên hệ ${support} nếu quá 30 phút chưa có email.</p>`, '<button class="btn btn-primary" type="button" data-retry>Kiểm tra lại</button>'],
       notfound: ['bad', 'Không tìm thấy', 'Không tìm thấy phiên thanh toán',
         `<p class="lead">Mã phiên trong đường dẫn không khớp phiên nào. Nếu bạn đã thanh toán, API key vẫn nằm trong email của Polar; cần hỗ trợ thì viết cho ${support}.</p>`, home],
+      disabled: ['bad', 'Chưa mở bán', 'Gói trả phí chưa mở bán',
+        `<p class="lead">${esc(d.message || 'Gói trả phí sắp mở bán.')} Nếu bạn đã thanh toán ở đâu đó mà chưa nhận được API key, hãy viết cho ${support}.</p>`, home],
       error: ['bad', 'Lỗi kết nối', 'Chưa kiểm tra được thanh toán',
         `<p class="lead">${esc(d.message || 'Không kết nối được máy chủ DatTTS.')} Nếu bạn đã thanh toán, đừng lo: Polar vẫn gửi API key qua email.</p>`, '<button class="btn btn-primary" type="button" data-retry>Thử lại</button>']
     };
@@ -81,7 +89,7 @@
     if (polling) return;
     polling = true;
     const t0 = Date.now();
-    let misses = 0;
+    let misses = 0, opens = 0;
     render('checking');
     try {
       for (;;) {
@@ -90,12 +98,15 @@
         catch (e) {
           if (e.status === 404) { render('notfound'); return; }
           if (e.status === 400 || e.status === 422) { render('missing'); return; }
-          if (e.code === 'billing_disabled' || ++misses >= 4) { render('error', { message: e.message }); return; }
+          if (e.code === 'billing_disabled') { render('disabled', { message: e.message }); return; }
+          if (++misses >= 4) { render('error', { message: e.message }); return; }
         }
         if (d) {
           const st = String(d.status || '');
           if (st === 'succeeded') { render('succeeded', d); $('#keyInput')?.focus?.({ preventScroll: true }); return; }
           if (st === 'expired' || st === 'failed') { render(st, d); return; }
+          if (st === 'open' && ++opens >= OPEN_POLLS_MAX) { render('unpaid', d); return; }
+          if (st !== 'open') opens = 0;
           render(st === 'confirmed' ? 'confirmed' : 'checking', d);
         }
         if (Date.now() - t0 + POLL_MS > POLL_MAX_MS) { render('timeout'); return; }

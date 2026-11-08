@@ -215,6 +215,12 @@ async function main(browser) {
   });
 
   await step('waitlist', async () => {
+    // Billing bật (có POLAR_ACCESS_TOKEN) thì nút mua dẫn sang Polar, form chờ ẩn — phần đó do e2e_billing.mjs kiểm.
+    const plans = await getJSON(page, '/api/billing/plans').catch(() => ({}));
+    if (plans.enabled) {
+      check('billing bật: nút "Mua gói" thay cho form chờ', /Mua gói/.test(await page.textContent('[data-buy="unlimited"] .lbl')) && await page.isHidden('#waitlist'));
+      return;
+    }
     await page.click('[data-plan="khong-gioi-han"]');
     const email = `e2e-${Date.now()}@example.vn`;
     await page.fill('#wlEmail', email);

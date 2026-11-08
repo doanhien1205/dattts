@@ -219,7 +219,7 @@
   <section id="bang-gia">
     <div class="sec-head">
       <div class="eyebrow">Bảng giá</div>
-      <h2>Giá rõ ràng. Hủy lúc nào cũng được.</h2>
+      <h2>Giá rõ ràng. Huỷ lúc nào cũng được.</h2>
       <p id="pricingLead">Gói miễn phí dùng được ngay trong phòng thu, không cần đăng ký. Gói trả phí thanh toán qua Polar bằng thẻ quốc tế, Apple Pay hoặc Google Pay; API key được gửi tới email của bạn ngay sau khi thanh toán.</p>
     </div>
     <div class="plans" id="plans">
@@ -230,25 +230,25 @@
         <a class="btn btn-ghost" href="#studio">Dùng ngay</a>
       </div>
       <div class="plan hot" data-plan-id="personal">
-        <span class="tag">Phổ biến nhất</span>
+        <span class="tag">Đề xuất</span>
         <h3>Cá nhân</h3>
         <div class="price" data-price><span class="price-ph">Đang tải giá…</span></div>
         <p class="vnd" data-vnd hidden></p>
-        <ul><li data-quota>1.000.000 ký tự mỗi tháng</li><li>Văn bản dài tới 100.000 ký tự mỗi lần</li><li>API key dùng cho phòng thu và API</li><li>Được dùng file cho mục đích thương mại</li></ul>
-        <button class="btn btn-primary" type="button" data-plan="ca-nhan" data-buy="personal"><span class="spinner" aria-hidden="true"></span><span class="lbl">Sắp mở bán · Giữ chỗ</span></button>
+        <ul><li data-quota>1.000.000 ký tự mỗi tháng</li><li>Văn bản dài tới 100.000 ký tự mỗi lần</li><li>API key dùng cho phòng thu và API</li><li>Không bị giới hạn theo ngày hay theo IP</li></ul>
+        <button class="btn btn-primary" type="button" data-plan="ca-nhan" data-buy="personal" aria-disabled="true"><span class="spinner" aria-hidden="true"></span><span class="lbl">Đang tải…</span></button>
       </div>
       <div class="plan" data-plan-id="unlimited">
         <h3>Không giới hạn</h3>
         <div class="price" data-price><span class="price-ph">Đang tải giá…</span></div>
         <p class="vnd" data-vnd hidden></p>
         <ul><li data-quota>Dùng hợp lý tới 20.000.000 ký tự mỗi tháng</li><li>Đủ cho khoảng 220 giờ âm thanh mỗi tháng</li><li>API key cho lập trình viên</li><li>Hỗ trợ ưu tiên qua email</li></ul>
-        <button class="btn btn-ghost" type="button" data-plan="khong-gioi-han" data-buy="unlimited"><span class="spinner" aria-hidden="true"></span><span class="lbl">Sắp mở bán · Giữ chỗ</span></button>
+        <button class="btn btn-ghost" type="button" data-plan="khong-gioi-han" data-buy="unlimited" aria-disabled="true"><span class="spinner" aria-hidden="true"></span><span class="lbl">Đang tải…</span></button>
       </div>
     </div>
     <p class="note plans-note" id="plansNote">“Không giới hạn” nghĩa là dùng hợp lý: tối đa 20.000.000 ký tự mỗi tháng cho một key, đủ cho hầu hết người làm nội dung. Cần nhiều hơn, hãy viết cho <a href="mailto:support@dattts.com">support@dattts.com</a>.</p>
     <p class="buy-msg" id="buyMsg" role="status" aria-live="polite"></p>
 
-    <form class="waitlist" id="waitlist" novalidate>
+    <form class="waitlist" id="waitlist" novalidate hidden>
       <div class="wl-copy">
         <h3>Vào danh sách chờ</h3>
         <p class="note">Gói trả phí sắp mở bán. Chúng tôi chỉ gửi một email khi gói của bạn mở. Không spam.</p>
@@ -311,7 +311,7 @@
     <details><summary>Thanh toán bằng gì?</summary><p>Thanh toán qua <a href="https://polar.sh" rel="noopener">Polar</a> bằng thẻ Visa, Mastercard, JCB, American Express, Apple Pay hoặc Google Pay. Thẻ ghi nợ quốc tế (Visa/Mastercard debit) của ngân hàng Việt Nam dùng được bình thường. Thẻ ATM nội địa chỉ chạy qua Napas thì chưa được hỗ trợ; nếu chưa có thẻ quốc tế, bạn có thể mở thẻ ghi nợ quốc tế ở hầu hết ngân hàng trong nước. Giá niêm yết bằng USD, ngân hàng của bạn tự quy đổi sang đồng và có thể thu phí chuyển đổi ngoại tệ (thường 1–3%).</p></details>
     <details><summary>Ai bán hàng và xuất hoá đơn?</summary><p>Polar Software Inc. là bên bán hàng chính thức (Merchant of Record): Polar thu tiền, tính thuế theo quốc gia của bạn, gửi hoá đơn và biên nhận qua email. Trên sao kê thẻ, giao dịch có thể hiện tên Polar thay vì DatTTS.</p></details>
     <details><summary>Tôi nhận API key ở đâu?</summary><p>Ngay sau khi thanh toán, Polar gửi email kèm API key bắt đầu bằng <code>DATTTS</code>. Bấm “Nhập API key” trong phòng thu và dán key vào là dùng được. Bạn cũng xem lại hoặc đổi key bất kỳ lúc nào trong cổng khách hàng của Polar (nút “Quản lý gói”).</p></details>
-    <details><summary>Huỷ gói và hoàn tiền thế nào?</summary><p>Huỷ bất kỳ lúc nào trong cổng khách hàng Polar; gói vẫn dùng được đến hết kỳ đã trả và không bị trừ tiền kỳ sau. Trong 14 ngày đầu, nếu bạn đã dùng dưới 10% hạn mức của kỳ đó, chúng tôi hoàn tiền đầy đủ — xem <a href="hoan-tien.html">Chính sách hoàn tiền</a>.</p></details>
+    <details><summary>Huỷ gói và hoàn tiền thế nào?</summary><p>Huỷ bất kỳ lúc nào trong cổng khách hàng Polar; gói vẫn dùng được đến hết kỳ đã trả và không bị trừ tiền kỳ sau. Hạn mức tháng tính theo tháng dương lịch và làm mới ngày 1 hằng tháng (giờ Việt Nam). Trong 14 ngày kể từ khi bị trừ tiền, nếu key đã dùng dưới 10% hạn mức tháng, chúng tôi hoàn tiền đầy đủ — xem <a href="hoan-tien.html">Chính sách hoàn tiền</a>.</p></details>
   </section>
 
   <footer>

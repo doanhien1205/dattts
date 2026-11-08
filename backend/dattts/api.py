@@ -25,7 +25,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import __version__
-from .billing import PAID_PLANS, PLAN_NAMES, Billing, BillingError, PolarClient, mask_email
+from .billing import MSG_KEY_RATE, PAID_PLANS, PLAN_NAMES, Billing, BillingError, PolarClient, mask_email
 from .audio import CONTENT_TYPES
 from .engine import DEFAULT_VOICE_ID, voice_id_from_name
 from .render import RenderError, RenderRequest, billable_chars, plan, request_key, validate
@@ -103,6 +103,9 @@ class CheckoutBody(BaseModel):
 WEBHOOK_PATH = "/api/billing/webhook"
 WEBHOOK_MAX_BYTES = 2 * 1024 * 1024
 CHECKOUT_RATE_PER_HOUR = 10
+# Số lần mỗi IP được hỏi Polar xác thực key (cache trượt) mỗi phút — chặn dò key ngẫu nhiên làm cạn
+# hạn mức API Polar của tổ chức và chiếm luồng xử lý.
+KEY_VALIDATE_RATE_PER_MIN = 20
 
 
 # ───────────────────────────── Tiện ích ─────────────────────────────
@@ -326,6 +329,8 @@ def create_app(renderer, store, settings: Settings | None = None, *, polar: Pola
     @app.exception_handler(BillingError)
     async def _billing_error(_req, exc: BillingError):
         headers = {"WWW-Authenticate": 'ApiKey header="X-API-Key"'} if exc.status == 401 else None
+        if exc.status == 429 and exc.code == "rate_limited":
+            headers = {"Retry-After": "60"}
         return _err(exc.code, exc.message, exc.status, headers)
 
     @app.exception_handler(RequestValidationError)
@@ -366,7 +371,13 @@ def create_app(renderer, store, settings: Settings | None = None, *, polar: Pola
         if hasattr(request.state, "who"):
             return request.state.who
         k = (request.headers.get("x-api-key") or "").strip()
-        res = billing.resolve_api_key(k) if k else None
+
+        def limit_validations() -> None:
+            rk = f"rl:lk:{today_vn():%Y-%m-%dT%H:%M}:{client_ip(request)}"
+            if store.kv_incr(rk, 1) > KEY_VALIDATE_RATE_PER_MIN:
+                raise BillingError("rate_limited", MSG_KEY_RATE, 429)
+
+        res = billing.resolve_api_key(k, on_miss=limit_validations) if k else None
         request.state.who = res
         return res
 

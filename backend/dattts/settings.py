@@ -76,9 +76,33 @@ class Settings:
     plan_unlimited_monthly_chars: int = 20_000_000
     public_base_url: str = "https://dattts.com"
 
+    def polar_plan_configured(self, plan: str) -> bool:
+        """Gói bán được khi có CẢ sản phẩm lẫn benefit License Key (thiếu benefit → key mua về bị từ chối)."""
+        pair = {"personal": (self.polar_product_personal, self.polar_benefit_personal),
+                "unlimited": (self.polar_product_unlimited, self.polar_benefit_unlimited)}.get(plan)
+        return bool(pair and pair[0] and pair[1])
+
+    def billing_missing(self) -> list[str]:
+        """Biến POLAR_* còn thiếu (rỗng = cấu hình đủ). Không có token → [] (billing tắt có chủ ý)."""
+        if not self.polar_access_token:
+            return []
+        missing = []
+        if not self.polar_organization_id:
+            missing.append("POLAR_ORGANIZATION_ID")
+        for name, val in (("POLAR_PRODUCT_PERSONAL", self.polar_product_personal),
+                          ("POLAR_BENEFIT_PERSONAL", self.polar_benefit_personal),
+                          ("POLAR_PRODUCT_UNLIMITED", self.polar_product_unlimited),
+                          ("POLAR_BENEFIT_UNLIMITED", self.polar_benefit_unlimited)):
+            if not val:
+                missing.append(name)
+        return missing
+
     @property
     def billing_enabled(self) -> bool:
-        return bool(self.polar_access_token)
+        # Bật khi có token + organization_id (Polar bắt buộc khi validate key) + ít nhất một gói đủ
+        # sản phẩm và benefit. Cấu hình dở dang → tắt (fail closed) thay vì bán gói mà key bị từ chối.
+        return bool(self.polar_access_token and self.polar_organization_id
+                    and any(self.polar_plan_configured(p) for p in ("personal", "unlimited")))
 
     @property
     def polar_base_url(self) -> str:

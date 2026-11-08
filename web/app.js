@@ -794,6 +794,7 @@
   const VND_PER_USD = Number(window.DATTTS_VND_PER_USD) > 0 ? Number(window.DATTTS_VND_PER_USD) : 25400;
   // Giá gói (đơn vị nhỏ nhất, ví dụ cent) và hạn mức lấy từ /api/billing/plans; chưa có thì để null.
   let billing = { enabled: false, loaded: false, plans: [] };
+  let buying = false; // đang tạo phiên thanh toán (xem buy())
   const planById = id => billing.plans.find(p => p && p.id === id) || null;
   const toVnd = p => (p && p.price != null && String(p.currency || 'usd').toLowerCase() === 'usd') ? Math.round(p.price / 100 * VND_PER_USD / 1000) * 1000 : null;
   function fmtMoney(p) {
@@ -854,29 +855,44 @@
       }
       if (q && p && p.monthly_chars) q.textContent = (id === 'unlimited' ? 'Dùng hợp lý tới ' : '') + fmtN(p.monthly_chars) + ' ký tự mỗi tháng';
       const btn = $('[data-buy]', card), lbl = $('.lbl', btn);
-      lbl.textContent = billing.enabled ? 'Mua gói ' + PLAN_LABEL[id] : 'Sắp mở bán · Giữ chỗ';
-      btn.setAttribute('aria-label', billing.enabled ? `Mua gói ${PLAN_LABEL[id]}, chuyển sang trang thanh toán của Polar` : `Gói ${PLAN_LABEL[id]} sắp mở bán, giữ chỗ trong danh sách chờ`);
+      if (!btn.classList.contains('busy')) {
+        // Chưa biết billing bật hay tắt → nút trung tính, bấm không làm gì (không rơi về danh sách chờ).
+        lbl.textContent = !billing.loaded ? 'Đang tải…' : billing.enabled ? 'Mua gói ' + PLAN_LABEL[id] : 'Sắp mở bán · Giữ chỗ';
+        btn.setAttribute('aria-label', !billing.loaded ? `Gói ${PLAN_LABEL[id]}: đang tải thông tin gói` : billing.enabled ? `Mua gói ${PLAN_LABEL[id]}, chuyển sang trang thanh toán của Polar` : `Gói ${PLAN_LABEL[id]} sắp mở bán, giữ chỗ trong danh sách chờ`);
+        if (!billing.loaded || buying) btn.setAttribute('aria-disabled', 'true'); else btn.removeAttribute('aria-disabled');
+      }
     });
     const unl = planById('unlimited');
     if (unl && unl.monthly_chars) $('#plansNote').innerHTML = `“Không giới hạn” nghĩa là dùng hợp lý: tối đa ${fmtN(unl.monthly_chars)} ký tự mỗi tháng cho một key, đủ cho hầu hết người làm nội dung. Cần nhiều hơn, hãy viết cho <a href="mailto:support@dattts.com">support@dattts.com</a>.`;
-    $('#waitlist').hidden = billing.enabled;
+    $('#waitlist').hidden = !billing.loaded || billing.enabled;
     $('#bang-gia').classList.toggle('billing-on', billing.enabled);
     if (billing.loaded && !billing.enabled) $('#pricingLead').textContent = 'Gói miễn phí dùng được ngay trong phòng thu, không cần đăng ký. Gói trả phí sắp mở bán qua Polar (thẻ quốc tế, Apple Pay, Google Pay) — để lại email để được báo khi mở.';
   }
-  async function loadPlans() {
-    try {
-      const d = await api('/api/billing/plans', { key: '' });
-      billing = { enabled: !!d.enabled, loaded: true, plans: Array.isArray(d.plans) ? d.plans : [] };
-    } catch (e) {
-      billing = { enabled: false, loaded: true, plans: [] };
-    }
-    renderPlans(); calc();
+  let plansReq = null; // gộp các lần gọi trùng nhau
+  function loadPlans() {
+    if (plansReq) return plansReq;
+    plansReq = (async () => {
+      try {
+        const d = await api('/api/billing/plans', { key: '' });
+        billing = { enabled: !!d.enabled, loaded: true, plans: Array.isArray(d.plans) ? d.plans : [] };
+      } catch (e) {
+        billing = { enabled: false, loaded: true, plans: [] };
+      }
+      renderPlans(); calc();
+    })().finally(() => { plansReq = null; });
+    return plansReq;
   }
   const safeRedirect = u => { try { const x = new URL(u, location.href); return /^https?:$/.test(x.protocol) ? x.href : null; } catch (e) { return null; } };
+  // Chỉ một phiên thanh toán được tạo mỗi lúc: khoá MỌI nút mua cho tới khi xong/lỗi.
+  function lockBuy(on) {
+    buying = on;
+    $$('[data-buy]').forEach(b => { b.disabled = on; if (on) b.setAttribute('aria-disabled', 'true'); else b.removeAttribute('aria-disabled'); });
+  }
   async function buy(plan, btn) {
-    if (btn.classList.contains('busy')) return;
+    if (buying || btn.classList.contains('busy')) return;
     const lbl = $('.lbl', btn), old = lbl.textContent;
-    btn.classList.add('busy'); btn.disabled = true; btn.setAttribute('aria-busy', 'true');
+    lockBuy(true);
+    btn.classList.add('busy'); btn.setAttribute('aria-busy', 'true');
     lbl.textContent = 'Đang mở trang thanh toán…'; setBuyMsg('');
     let leaving = false;
     try {
@@ -891,7 +907,7 @@
       else setBuyMsg(e.code === 'network' ? 'Không kết nối được máy chủ để tạo phiên thanh toán. Kiểm tra mạng rồi thử lại.' : e.message, 'err');
     } finally {
       // Khi đang chuyển trang thì giữ nút bận; nếu người dùng bấm Back (bfcache) thì mở lại nút.
-      const reset = () => { btn.classList.remove('busy'); btn.disabled = false; btn.removeAttribute('aria-busy'); lbl.textContent = old; };
+      const reset = () => { btn.classList.remove('busy'); btn.removeAttribute('aria-busy'); lbl.textContent = old; lockBuy(false); renderPlans(); };
       if (!leaving) reset(); else addEventListener('pageshow', ev => { if (ev.persisted) { reset(); setBuyMsg(''); } }, { once: true });
     }
   }
@@ -989,6 +1005,7 @@
   const wl = $('#waitlist'), wlEmail = $('#wlEmail'), wlPlan = $('#wlPlan'), wlMsg = $('#wlMsg'), wlBtn = $('#wlBtn');
   function markPlan() { $$('[data-plan]').forEach(b => b.closest('.plan').classList.toggle('picked', b.dataset.plan === wlPlan.value)); }
   $$('[data-plan]').forEach(b => b.addEventListener('click', () => {
+    if (b.dataset.buy && (!billing.loaded || buying)) return; // chưa biết billing bật/tắt, hoặc đang tạo phiên
     if (billing.enabled && b.dataset.buy) { buy(b.dataset.buy, b); return; }
     wlPlan.value = b.dataset.plan; markPlan();
     wl.scrollIntoView({ block: 'center', behavior: reduceMotion.matches ? 'auto' : 'smooth' });
@@ -1076,5 +1093,5 @@
   if (wlSaved && wlSaved.email) { wlEmail.value = wlSaved.email; }
   updateCount();
   if (location.protocol === 'file:' && !API) { goOffline(); billing.loaded = true; renderPlans(); calc(); }
-  else checkHealth().then(() => { if (!online) loadPlans(); });
+  else { renderPlans(); loadPlans(); checkHealth(); } // bảng giá tải song song, không chờ health/giọng
 })();

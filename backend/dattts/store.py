@@ -119,6 +119,15 @@ class LocalStore:
             self._flush()
             return v
 
+    def kv_update(self, key: str, fn: Callable[[Any], Any]) -> Any:
+        """Đọc–sửa–ghi nguyên tử: ``fn(giá trị hiện tại hoặc None)`` → giá trị mới (được lưu và trả về)."""
+        with self._lock:
+            cur = self._kv.get(key)
+            new = fn(None if cur is None else json.loads(json.dumps(cur)))
+            self._kv[key] = json.loads(json.dumps(new))
+            self._flush()
+            return new
+
     def _path(self, name: str) -> Path:
         return self.files / safe_blob_name(name)
 
@@ -237,6 +246,18 @@ class ModalStore:
                 v = int(self.dict.get(key, 0) or 0) + int(amount)
                 self.dict.put(key, v)
                 return v
+            finally:
+                self._release(lock_key, token)
+
+    def kv_update(self, key: str, fn: Callable[[Any], Any]) -> Any:
+        """Đọc–sửa–ghi nguyên tử giữa các container (cùng khoá phân tán với ``kv_incr``)."""
+        lock_key = f"lock:{key}"
+        with self._lock:
+            token = self._acquire(lock_key)
+            try:
+                new = fn(self.dict.get(key, None))
+                self.dict.put(key, new)
+                return new
             finally:
                 self._release(lock_key, token)
 

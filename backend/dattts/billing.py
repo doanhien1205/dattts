@@ -20,7 +20,7 @@ import re
 import threading
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 import httpx
 
@@ -40,6 +40,7 @@ __all__ = [
     "PAID_PLANS",
     "PLAN_NAMES",
     "CHECKOUT_ID_RE",
+    "LICENSE_KEY_RE",
 ]
 
 VN_TZ = timezone(timedelta(hours=7), "Asia/Ho_Chi_Minh")
@@ -51,6 +52,8 @@ PLAN_NAMES = {
     "unlimited": "Không giới hạn",
     "internal": "Nội bộ",
 }
+# License key Polar của DatTTS: tiền tố "DATTTS-" + chữ/số/gạch nối. Sai dạng → 401 ngay, không gọi Polar.
+LICENSE_KEY_RE = re.compile(r"^DATTTS-[A-Za-z0-9-]{1,120}$", re.IGNORECASE)
 CHECKOUT_ID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
 # Cache kết quả xác thực license key (giây)
@@ -72,6 +75,9 @@ INVALIDATING_EVENTS = frozenset({
 
 MSG_UNAVAILABLE = "Hệ thống thanh toán đang tạm gián đoạn. Bạn thử lại sau ít phút nhé."
 MSG_DISABLED = "Gói trả phí sắp mở bán. Bạn để lại email ở bảng giá để được báo sớm nhé."
+MSG_KEY_RATE = "Bạn thử quá nhiều API key trong thời gian ngắn. Bạn đợi một phút rồi thử lại nhé."
+MSG_BAD_EMAIL = ("Hệ thống thanh toán không nhận email này (có thể tên miền gõ nhầm). Bạn kiểm tra lại email "
+                 "hoặc để trống — Polar sẽ hỏi email ở trang thanh toán.")
 MSG_INVALID_KEY = ("API key không hợp lệ hoặc gói đã hết hạn. Bạn kiểm tra lại key trong email của Polar "
                    "hoặc trong cổng quản lý gói nhé.")
 
@@ -254,14 +260,15 @@ class PolarClient:
         return self._json(self._request("GET", f"/v1/products/{product_id}"))
 
     def validate_license_key(self, key: str) -> dict | None:
-        body: dict[str, Any] = {"key": key}
-        if self.organization_id:
-            body["organization_id"] = self.organization_id
+        # organization_id là trường BẮT BUỘC của Polar (LicenseKeyValidate); luôn gửi.
+        body: dict[str, Any] = {"key": key, "organization_id": self.organization_id or ""}
         try:
             r = self._request("POST", "/v1/license-keys/validate", body)
         except PolarError as e:
-            if e.status in (404, 422):  # thu hồi/hết hạn/không tồn tại/sai dạng
+            if e.status == 404:  # thu hồi/hết hạn/không tồn tại
                 return None
+            if e.status == 422:  # body sai (thường là POLAR_ORGANIZATION_ID sai) — lỗi cấu hình, không phải key sai
+                log.error("Polar từ chối body validate license key (422): kiểm tra POLAR_ORGANIZATION_ID")
             raise
         return self._json(r)
 
@@ -319,14 +326,30 @@ def _info_from_validated(v: dict, settings) -> dict | None:
     }
 
 
+def _kv_update(store, key: str, fn: Callable[[Any], Any]) -> Any:
+    """Đọc–sửa–ghi nguyên tử nếu store hỗ trợ (``kv_update`` khoá cả giữa các container)."""
+    upd = getattr(store, "kv_update", None)
+    if upd is not None:
+        return upd(key, fn)
+    new = fn(store.kv_get(key))
+    store.kv_set(key, new)
+    return new
+
+
 def _index_customer(store, customer_id: str, h: str) -> None:
     if not customer_id:
         return
     ik = f"lkc:{customer_id}"
-    cur = list(store.kv_get(ik) or [])
-    if h not in cur:
-        cur.append(h)
-        store.kv_set(ik, cur[-50:])
+    if h in (store.kv_get(ik) or []):
+        return
+
+    def add(cur):
+        cur = list(cur or [])
+        if h not in cur:
+            cur.append(h)
+        return cur[-50:]
+
+    _kv_update(store, ik, add)
 
 
 def _kv_delete(store, key: str) -> None:
@@ -337,19 +360,23 @@ def _kv_delete(store, key: str) -> None:
         store.kv_set(key, None)
 
 
-def resolve_api_key(key: str, settings, store, client: PolarClient | None, now: float | None = None) -> dict:
+def resolve_api_key(key: str, settings, store, client: PolarClient | None, now: float | None = None,
+                    on_miss: Callable[[], None] | None = None) -> dict:
     """Xác định khách từ ``X-API-Key``.
 
     → ``{"kind":"internal"}`` (key trong ``API_KEYS``) hoặc
       ``{"kind":"polar","license_key_id","customer_id","email","plan"}``.
     Key sai → ``BillingError(invalid_api_key, 401)``; Polar lỗi và không có cache → 503 ``billing_unavailable``.
+    ``on_miss``: gọi trước mỗi lần phải hỏi Polar (cache trượt) — API dùng để giới hạn theo IP; nó ném
+    ``BillingError`` để chặn (khi đó vẫn dùng cache cũ ≤ 24 giờ nếu có).
     """
     key = (key or "").strip()
     if not key:
         raise BillingError("invalid_api_key", MSG_INVALID_KEY, 401)
     if _is_internal(key, settings):
         return {"kind": "internal"}
-    if not settings.billing_enabled or client is None or len(key) > 256:
+    if not settings.billing_enabled or client is None or not LICENSE_KEY_RE.fullmatch(key):
+        # Không đúng dạng key Polar của DatTTS → từ chối ngay: không gọi Polar, không ghi cache.
         raise BillingError("invalid_api_key", MSG_INVALID_KEY, 401)
     t = time.time() if now is None else now
     h = key_hash(key)
@@ -357,11 +384,19 @@ def resolve_api_key(key: str, settings, store, client: PolarClient | None, now: 
     cached = store.kv_get(ck)
     if isinstance(cached, dict) and t < float(cached.get("exp") or 0):
         return _cached_result(cached)
+    stale_ok = isinstance(cached, dict) and t - float(cached.get("at") or 0) <= LK_STALE_MAX
+    if on_miss is not None:
+        try:
+            on_miss()
+        except BillingError:
+            if stale_ok:
+                return _cached_result(cached)
+            raise
     try:
         v = client.validate_license_key(key)
     except PolarError as e:
         log.warning("không xác thực được license key %s…: %s", h[:12], e)
-        if isinstance(cached, dict) and t - float(cached.get("at") or 0) <= LK_STALE_MAX:
+        if stale_ok:
             return _cached_result(cached)
         raise BillingError("billing_unavailable", MSG_UNAVAILABLE, 503) from None
     info = _info_from_validated(v, settings) if v is not None else None
@@ -408,6 +443,11 @@ class Billing:
         self.client = client
         self._plans_cache: dict[str, Any] = {}
         self._lock = threading.Lock()
+        missing = settings.billing_missing()
+        if missing:
+            log.error("Cấu hình Polar thiếu %s — %s", ", ".join(missing),
+                      "các gói thiếu sản phẩm/benefit sẽ không bán" if settings.billing_enabled
+                      else "billing TẮT (không bán gói nào) cho tới khi đặt đủ biến")
 
     @property
     def enabled(self) -> bool:
@@ -437,9 +477,12 @@ class Billing:
         for pr in p.get("prices") or []:
             if pr.get("is_archived") or pr.get("amount_type") != "fixed":
                 continue
+            # Polar hiện đặt chu kỳ ở cấp SẢN PHẨM (Product.recurring_interval); trường cùng tên trên
+            # giá chỉ còn ở schema Legacy* → dùng làm dự phòng.
             return {"price": int(pr.get("price_amount") or 0),
                     "currency": str(pr.get("price_currency") or "usd").lower(),
-                    "interval": pr.get("recurring_interval") or None}
+                    "interval": p.get("recurring_interval") or pr.get("recurring_interval") or None,
+                    "interval_count": int(p.get("recurring_interval_count") or 1)}
         return empty
 
     def plans(self, now: float | None = None) -> dict:
@@ -460,7 +503,7 @@ class Billing:
             limit = self.monthly_limit(plan)
             paid.append({"id": plan, "name": PLAN_NAMES[plan], **price, "monthly_chars": limit,
                          "chars": f"{_fmt_n(limit)}/tháng",
-                         "available": bool(self.enabled and self.product_id(plan))})
+                         "available": bool(self.enabled and self.settings.polar_plan_configured(plan))})
         data = {
             "enabled": self.enabled,
             "plans": [{"id": "free", "name": PLAN_NAMES["free"], "price": 0, "currency": "usd", "interval": None,
@@ -477,7 +520,7 @@ class Billing:
         if plan not in PAID_PLANS:
             raise BillingError("bad_plan", "Gói không hợp lệ. Hãy chọn gói Cá nhân hoặc Không giới hạn.", 400)
         product = self.product_id(plan)
-        if not product:
+        if not product or not self.settings.polar_plan_configured(plan):
             raise BillingError("billing_disabled", "Gói này chưa mở bán. Bạn quay lại sau nhé.", 503)
         base = self.settings.public_base
         try:
@@ -489,6 +532,8 @@ class Billing:
                 customer_email=email or None,
             )
         except PolarError as e:
+            if e.status == 422 and email:  # Polar kiểm email kỹ hơn (tên miền nhận được thư…)
+                raise BillingError("bad_email", MSG_BAD_EMAIL, 400) from None
             log.warning("tạo checkout lỗi: %s", e)
             raise BillingError("billing_unavailable", MSG_UNAVAILABLE, 503) from None
         url = co.get("url")
@@ -525,8 +570,10 @@ class Billing:
             raise BillingError("billing_unavailable", MSG_UNAVAILABLE, 503) from None
 
     # ---------- key ----------
-    def resolve_api_key(self, key: str, now: float | None = None) -> dict:
-        return resolve_api_key(key, self.settings, self.store, self.client if self.enabled else None, now)
+    def resolve_api_key(self, key: str, now: float | None = None,
+                        on_miss: Callable[[], None] | None = None) -> dict:
+        return resolve_api_key(key, self.settings, self.store, self.client if self.enabled else None, now,
+                               on_miss=on_miss)
 
     # ---------- quota tháng ----------
     @staticmethod
@@ -565,13 +612,15 @@ class Billing:
     def _track_month_key(self, month: str, who: dict) -> None:
         """Chỉ mục ``usage_keys:<YYYY-MM>`` → {license_key_id: plan} để admin cộng tổng theo gói."""
         ik = f"usage_keys:{month}"
+        lkid, plan = who["license_key_id"], who["plan"]
         try:
             cur = self.store.kv_get(ik) or {}
-            if cur.get(who["license_key_id"]) != who["plan"]:
-                with self._lock:
-                    cur = self.store.kv_get(ik) or {}
-                    cur[who["license_key_id"]] = who["plan"]
-                    self.store.kv_set(ik, cur)
+            if cur.get(lkid) != plan:
+                def put(cur):
+                    cur = dict(cur or {})
+                    cur[lkid] = plan
+                    return cur
+                _kv_update(self.store, ik, put)  # nguyên tử cả giữa các container
         except Exception:  # pragma: no cover
             log.exception("không ghi được chỉ mục usage_keys")
 
@@ -615,10 +664,8 @@ class Billing:
                  "email": mask_email(email if isinstance(email, str) else None),
                  "status": data.get("status") if isinstance(data.get("status"), str) else None,
                  "invalidated": invalidated}
-        with self._lock:
-            events = list(self.store.kv_get(EVENTS_KEY) or [])
-            events.append(event)
-            self.store.kv_set(EVENTS_KEY, events[-EVENTS_MAX:])
+        _kv_update(self.store, EVENTS_KEY,  # nguyên tử cả giữa các container
+                   lambda cur: (list(cur or []) + [event])[-EVENTS_MAX:])
         return {"ok": True, "type": etype}
 
     # ---------- admin ----------

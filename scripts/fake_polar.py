@@ -6,7 +6,7 @@ Mô phỏng đúng các endpoint Polar mà ``backend/dattts/billing.py`` dùng:
     POST /v1/checkouts/                          tạo phiên thanh toán → 201 {id, url, status:"open", ...}
     GET  /v1/checkouts/{id}                      đọc phiên (status: open|expired|confirmed|succeeded|failed)
     GET  /v1/products/{id}                       sản phẩm + giá (cent, USD, theo tháng)
-    POST /v1/license-keys/validate               (cần token) xác thực license key → 200 hoặc 404
+    POST /v1/license-keys/validate               (cần token) xác thực license key → 200, 404; thiếu/sai dạng organization_id → 422
     POST /v1/customer-portal/license-keys/validate  (công khai) như trên
     POST /v1/customer-sessions/                  → 201 {customer_portal_url, token, expires_at}
 
@@ -63,6 +63,7 @@ import hashlib
 import hmac
 import html
 import json
+import re
 import secrets
 import threading
 import time
@@ -93,6 +94,19 @@ TEST_KEYS = {
     "DATTTS-UNLIMITED-TEST": ("unlimited", CUSTOMER_UNLIMITED, "granted"),
     "DATTTS-REVOKED-TEST": ("personal", CUSTOMER_REVOKED, "revoked"),
 }
+
+
+UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+# Tên miền Polar từ chối ở customer_email (giả lập kiểm tra khả năng nhận thư): TLD dành riêng + lỗi gõ phổ biến
+_UNDELIVERABLE_TLDS = (".test", ".local", ".invalid", ".localhost")
+_UNDELIVERABLE_DOMAINS = ("gmail.con", "gmial.com", "yahoo.con")
+
+
+def _deliverable(email) -> bool:
+    if not isinstance(email, str) or "@" not in email:
+        return False
+    domain = email.rsplit("@", 1)[1].lower()
+    return not (domain.endswith(_UNDELIVERABLE_TLDS) or domain in _UNDELIVERABLE_DOMAINS)
 
 
 def _iso(ts: float | None = None) -> str:
@@ -135,10 +149,11 @@ class FakePolar:
         p = self.state["products"][pid]
         return {
             "id": pid, "name": p["name"], "description": None, "is_recurring": True, "is_archived": False,
-            "organization_id": ORG_ID, "recurring_interval": "month", "created_at": _iso(0), "modified_at": None,
+            "organization_id": ORG_ID, "recurring_interval": "month", "recurring_interval_count": 1,
+            "created_at": _iso(0), "modified_at": None,
             "prices": [{"id": str(uuid.uuid5(uuid.NAMESPACE_URL, "price/" + pid)), "type": "recurring",
                         "amount_type": "fixed", "price_amount": p["price"], "price_currency": "usd",
-                        "recurring_interval": "month", "is_archived": False, "product_id": pid}],
+                        "is_archived": False, "product_id": pid}],
             "benefits": [{"id": p["benefit"], "type": "license_keys", "description": "API key DatTTS"}],
             "metadata": {"plan": p["plan"]},
         }
@@ -249,6 +264,9 @@ def create_app(fp: FakePolar) -> FastAPI:
             return err(422, "products: phải có đúng một sản phẩm hợp lệ", "RequestValidationError")
         if not b.get("success_url"):
             return err(422, "success_url bắt buộc trong bản giả", "RequestValidationError")
+        em = b.get("customer_email")
+        if em is not None and not _deliverable(em):  # Polar: EmailStrDNS (kiểm tên miền nhận được thư)
+            return err(422, "customer_email: The domain name does not accept email.", "RequestValidationError")
         pid = prods[0]
         cid = str(uuid.uuid4())
         now = time.time()
@@ -288,7 +306,10 @@ def create_app(fp: FakePolar) -> FastAPI:
         key, org = b.get("key"), b.get("organization_id")
         if not isinstance(key, str) or not key:
             return err(422, "key bắt buộc", "RequestValidationError")
-        if org and org != ORG_ID:
+        if not isinstance(org, str) or not UUID_RE.fullmatch(org):  # Polar: organization_id bắt buộc, uuid4
+            return err(422, "organization_id: Field required / Input should be a valid UUID",
+                       "RequestValidationError")
+        if org != ORG_ID:
             return err(404, "License key not found")
         k = fp.state["keys"].get(key)
         if not k or k["status"] != "granted":

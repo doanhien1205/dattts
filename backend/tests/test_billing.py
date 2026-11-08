@@ -50,6 +50,7 @@ class FakePolar:
         self.network_error = False
         self.checkout_status = "open"
         self.prices = {PROD_P: 299, PROD_U: 999}
+        self.checkout_fail: int | None = None  # mã lỗi riêng cho POST /v1/checkouts/
 
     def add_key(self, key, benefit=BEN_P, lkid="lk-1", customer=CUST, email="an.nguyen@gmail.com"):
         self.keys[key] = {"id": lkid, "status": "granted", "benefit_id": benefit, "customer_id": customer,
@@ -69,6 +70,8 @@ class FakePolar:
         p, m = request.url.path, request.method
         if m == "POST" and p == "/v1/checkouts/":
             body = json.loads(request.content)
+            if self.checkout_fail:
+                return httpx.Response(self.checkout_fail, json={"detail": [{"loc": ["body", "customer_email"]}]})
             return httpx.Response(201, json={"id": CHECKOUT_ID, "url": f"https://sandbox.polar.sh/checkout/{CHECKOUT_ID}",
                                              "status": "open", "client_secret": "cs", "metadata": body["metadata"],
                                              "product_id": body["products"][0]})
@@ -81,12 +84,14 @@ class FakePolar:
                                              "customer_email": "an.nguyen@gmail.com"})
         if m == "GET" and p.startswith("/v1/products/"):
             pid = p.rsplit("/", 1)[1]
-            return httpx.Response(200, json={"id": pid, "name": "Gói", "is_archived": False, "prices": [
-                {"amount_type": "fixed", "price_amount": self.prices[pid], "price_currency": "usd",
-                 "recurring_interval": "month"}]})
+            return httpx.Response(200, json={"id": pid, "name": "Gói", "is_archived": False,
+                                             "recurring_interval": "month", "recurring_interval_count": 1,
+                                             "prices": [{"amount_type": "fixed", "price_amount": self.prices[pid],
+                                                         "price_currency": "usd"}]})
         if m == "POST" and p == "/v1/license-keys/validate":
             body = json.loads(request.content)
-            assert body["organization_id"] == ORG
+            if body.get("organization_id") != ORG:  # Polar: organization_id bắt buộc (uuid4)
+                return httpx.Response(422, json={"detail": [{"loc": ["body", "organization_id"]}]})
             v = self.keys.get(body["key"])
             return httpx.Response(200, json=v) if v else httpx.Response(404, json={"detail": "not found"})
         if m == "POST" and p == "/v1/customer-sessions/":
@@ -144,6 +149,8 @@ def sign(body: bytes, secret: str, msg_id="msg_1", ts=None, old_style=False):
 
 def test_settings_from_env():
     s = Settings.from_env({"POLAR_ACCESS_TOKEN": "x", "POLAR_SERVER": "production",
+                           "POLAR_ORGANIZATION_ID": ORG, "POLAR_PRODUCT_PERSONAL": PROD_P,
+                           "POLAR_BENEFIT_PERSONAL": BEN_P,
                            "PLAN_PERSONAL_MONTHLY_CHARS": "5", "PUBLIC_BASE_URL": "http://127.0.0.1:8765/"})
     assert s.billing_enabled and s.polar_base_url == "https://api.polar.sh"
     assert s.plan_personal_monthly_chars == 5 and s.plan_unlimited_monthly_chars == 20_000_000
@@ -656,3 +663,144 @@ def test_polar_client_sends_auth_and_base(fake):
     assert cl.validate_license_key("DATTTS-NONE") is None
     fake.add_key("DATTTS-YES")
     assert cl.validate_license_key("DATTTS-YES")["id"] == "lk-1"
+
+
+# ───────────────────────────── Sửa lỗi review thanh toán ─────────────────────────────
+
+
+def test_malformed_keys_rejected_without_calling_polar(make_bclient, fake):
+    c = make_bclient()
+    for k in ("sai", "random-" + "x" * 30, "DATTTS-", "DATTTS-a b", "DATTTS-" + "A" * 300):
+        r = c.get("/api/me", headers={"X-API-Key": k})
+        assert r.status_code == 401 and err(r) == "invalid_api_key", k
+    assert fake.calls("/v1/license-keys/validate") == []
+    raw = (c.store.root / "kv.json").read_text(encoding="utf-8") if (c.store.root / "kv.json").exists() else ""
+    assert '"lk:' not in raw
+
+
+def test_key_validation_rate_limited_per_ip(make_bclient, fake):
+    c = make_bclient()
+    fake.add_key("DATTTS-GOOD-1")
+    codes = [c.get("/api/quota", headers={"X-API-Key": f"DATTTS-RAND-{i:04d}"}).status_code for i in range(25)]
+    assert codes[:20] == [401] * 20 and set(codes[20:]) == {429}
+    assert len(fake.calls("/v1/license-keys/validate")) == 20
+    r = c.post("/api/tts", json={"text": "Xin chào."}, headers={"X-API-Key": "DATTTS-GOOD-1"})
+    assert r.status_code == 429 and err(r) == "rate_limited" and r.headers["retry-after"] == "60"
+    assert len(fake.calls("/v1/license-keys/validate")) == 20
+    # Không gửi key → vẫn dùng thử bình thường
+    assert c.post("/api/tts", json={"text": "Xin chào."}).status_code == 200
+
+
+def test_rate_limited_validation_falls_back_to_stale_cache(tmp_path, fake):
+    settings = Settings.from_env({}, **POLAR_ENV)
+    store = LocalStore(str(tmp_path / "kv"))
+    client = B.PolarClient.from_settings(settings, transport=httpx.MockTransport(fake))
+    fake.add_key("DATTTS-STALE")
+    t0 = 1_800_000_000.0
+    B.resolve_api_key("DATTTS-STALE", settings, store, client, now=t0)
+
+    def deny():
+        raise B.BillingError("rate_limited", "x", 429)
+
+    n = len(fake.requests)
+    assert B.resolve_api_key("DATTTS-STALE", settings, store, client, now=t0 + 700, on_miss=deny)["plan"] == "personal"
+    assert len(fake.requests) == n
+    with pytest.raises(B.BillingError) as e:
+        B.resolve_api_key("DATTTS-OTHER", settings, store, client, now=t0, on_miss=deny)
+    assert e.value.status == 429
+
+
+@pytest.mark.parametrize("missing", ["polar_organization_id", "both_benefits", "both_products"])
+def test_partial_polar_config_disables_billing(make_bclient, fake, caplog, missing):
+    over = {"polar_organization_id": {"polar_organization_id": None},
+            "both_benefits": {"polar_benefit_personal": None, "polar_benefit_unlimited": None},
+            "both_products": {"polar_product_personal": None, "polar_product_unlimited": None}}[missing]
+    with caplog.at_level("ERROR", logger="dattts.billing"):
+        c = make_bclient(**over)
+    assert "Cấu hình Polar thiếu" in caplog.text and "billing TẮT" in caplog.text
+    j = c.get("/api/billing/plans").json()
+    assert j["enabled"] is False and not any(p.get("available") for p in j["plans"])
+    r = c.post("/api/billing/checkout", json={"plan": "personal"})
+    assert r.status_code == 503 and err(r) == "billing_disabled"
+    assert fake.requests == []
+
+
+def test_plan_without_benefit_not_sold(make_bclient, fake, caplog):
+    with caplog.at_level("ERROR", logger="dattts.billing"):
+        c = make_bclient(polar_benefit_unlimited=None)
+    assert "POLAR_BENEFIT_UNLIMITED" in caplog.text
+    j = c.get("/api/billing/plans").json()
+    avail = {p["id"]: p.get("available") for p in j["plans"]}
+    assert j["enabled"] is True and avail["personal"] is True and avail["unlimited"] is False
+    r = c.post("/api/billing/checkout", json={"plan": "unlimited"})
+    assert r.status_code == 503 and err(r) == "billing_disabled"
+    assert c.post("/api/billing/checkout", json={"plan": "personal"}).status_code == 200
+
+
+def test_validate_always_sends_org_and_422_is_unavailable(tmp_path, fake, caplog):
+    settings = Settings.from_env({}, **POLAR_ENV)
+    store = LocalStore(str(tmp_path / "kv"))
+    client = B.PolarClient.from_settings(settings, transport=httpx.MockTransport(fake))
+    fake.add_key("DATTTS-ORG")
+    B.resolve_api_key("DATTTS-ORG", settings, store, client)
+    assert json.loads(fake.calls("/v1/license-keys/validate")[-1].content)["organization_id"] == ORG
+    # Org sai → Polar 422: lỗi cấu hình → 503, KHÔNG cache như key sai
+    bad = Settings.from_env({}, **{**POLAR_ENV, "polar_organization_id": "sai-org"})
+    bclient = B.PolarClient.from_settings(bad, transport=httpx.MockTransport(fake))
+    with caplog.at_level("ERROR", logger="dattts.billing"), pytest.raises(B.BillingError) as e:
+        B.resolve_api_key("DATTTS-ORG", bad, LocalStore(str(tmp_path / "kv2")), bclient)
+    assert e.value.status == 503 and e.value.code == "billing_unavailable"
+    assert "POLAR_ORGANIZATION_ID" in caplog.text
+    assert '"lk:' not in ((tmp_path / "kv2" / "kv.json").read_text() if (tmp_path / "kv2" / "kv.json").exists() else "")
+
+
+def test_price_interval_from_product_level(make_bclient, fake):
+    j = make_bclient().get("/api/billing/plans").json()
+    pers = j["plans"][1]
+    assert pers["interval"] == "month" and pers["interval_count"] == 1  # fake: chu kỳ chỉ ở cấp sản phẩm
+
+
+def test_price_interval_legacy_price_fallback(tmp_path):
+    def legacy(request):
+        return httpx.Response(200, json={"id": PROD_P, "is_archived": False, "prices": [
+            {"amount_type": "fixed", "price_amount": 299, "price_currency": "usd", "recurring_interval": "year"}]})
+    settings = Settings.from_env({}, **POLAR_ENV)
+    b = B.Billing(settings, LocalStore(str(tmp_path / "kv")),
+                  B.PolarClient.from_settings(settings, transport=httpx.MockTransport(legacy)))
+    assert b._price(PROD_P)["interval"] == "year"
+
+
+def test_checkout_422_email_is_bad_email_not_outage(make_bclient, fake):
+    c = make_bclient()
+    fake.checkout_fail = 422
+    r = c.post("/api/billing/checkout", json={"plan": "personal", "email": "an@gmail.con"})
+    assert r.status_code == 400 and err(r) == "bad_email"
+    fake.checkout_fail = 500
+    r = c.post("/api/billing/checkout", json={"plan": "personal", "email": "an@gmail.com"})
+    assert r.status_code == 503 and err(r) == "billing_unavailable"
+
+
+def test_event_log_and_month_index_atomic_across_containers(tmp_path):
+    import threading as _th
+
+    from test_review_fixes import _FakeDict, _FakeVolume
+    from dattts.store import ModalStore
+
+    d = _FakeDict()
+    settings = Settings.from_env({}, **POLAR_ENV)
+    bills = [B.Billing(settings, ModalStore(mount=str(tmp_path), dict_obj=d, volume_obj=_FakeVolume(tmp_path, {})),
+                       client=object()) for _ in range(2)]
+
+    def work(b, n):
+        for i in range(15):
+            b._process_event(f"wh-{n}-{i}", json.dumps({"type": "order.paid", "data": {}}).encode())
+            b._track_month_key("2026-11", {"license_key_id": f"lk-{n}-{i}", "plan": "personal"})
+
+    ts = [_th.Thread(target=work, args=(b, n)) for n, b in enumerate(bills)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+    assert len(d.d["billing_events"]) == 30
+    assert len(d.d["usage_keys:2026-11"]) == 30
+    assert not any(k.startswith("lock:") for k in d.d)

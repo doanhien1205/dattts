@@ -389,3 +389,4 @@ footer{border-top:1px solid var(--line);padding-block:28px 40px;display:flex;jus
 .doc .tblwrap{overflow-x:auto}
 #payCard{display:flex;flex-direction:column;gap:14px;min-width:0}
 #payCard code{white-space:normal;overflow-wrap:anywhere}
+[data-buy][aria-disabled="true"]:not(.busy){opacity:.72;cursor:progress}

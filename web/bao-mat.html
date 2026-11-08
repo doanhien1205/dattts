@@ -39,12 +39,12 @@
       <p class="updated">Cập nhật lần cuối: 08/11/2026</p>
 
       <p>Chính sách này giải thích DatTTS (dattts.com), do [Tên chủ sở hữu / doanh nghiệp] vận hành, thu thập và xử lý những dữ liệu nào, để làm gì và trong bao lâu. Chúng tôi chỉ thu thập những gì cần để dịch vụ chạy được và xử lý dữ liệu cá nhân theo quy định pháp luật Việt Nam về bảo vệ dữ liệu cá nhân.</p>
-      <div class="callout"><b>Tóm tắt:</b> không cần tài khoản; văn bản chỉ dùng để tạo giọng đọc; file tạo ra được lưu tạm và xoá sau 30 ngày; thanh toán và email mua hàng do Polar xử lý; chúng tôi không bán dữ liệu và không dùng văn bản của bạn để huấn luyện mô hình.</div>
+      <div class="callout"><b>Tóm tắt:</b> không cần tài khoản; văn bản chỉ dùng để tạo giọng đọc; file tạo ra được lưu trong bộ nhớ đệm để bạn nghe lại và bạn có thể yêu cầu xoá bất kỳ lúc nào; thanh toán và email mua hàng do Polar xử lý; chúng tôi không bán dữ liệu và không dùng văn bản của bạn để huấn luyện mô hình.</div>
 
       <h2>1. Dữ liệu chúng tôi xử lý</h2>
       <ul>
         <li><b>Văn bản và tuỳ chọn bạn gửi</b> (giọng, tốc độ, định dạng, từ điển phát âm): được xử lý để tạo âm thanh và phụ đề. Văn bản đi kèm file kết quả (trong phụ đề và thông tin mốc thời gian) và được lưu cùng file trong bộ nhớ đệm.</li>
-        <li><b>File âm thanh và phụ đề</b>: lưu trong bộ nhớ đệm để bạn nghe lại, tải định dạng khác mà không bị tính thêm ký tự, và <b>bị xoá sau 30 ngày</b>. Ai có đường dẫn file đều mở được file; đường dẫn chứa mã khó đoán, nhưng đừng chia sẻ đường dẫn nếu nội dung nhạy cảm.</li>
+        <li><b>File âm thanh và phụ đề</b>: lưu trong bộ nhớ đệm để bạn nghe lại, tải định dạng khác mà không bị tính thêm ký tự. Bạn có thể <b>yêu cầu xoá</b> bất kỳ lúc nào qua <a href="mailto:support@dattts.com">support@dattts.com</a> (gửi kèm đường dẫn file). Ai có đường dẫn file đều mở được file; đường dẫn chứa mã khó đoán, nhưng đừng chia sẻ đường dẫn nếu nội dung nhạy cảm.</li>
         <li><b>Địa chỉ IP</b>: dùng để đếm lượt miễn phí theo ngày, giới hạn số lần tạo phiên thanh toán và chống lạm dụng. Chúng tôi lưu bộ đếm theo ngày, không gắn IP với danh tính của bạn.</li>
         <li><b>API key</b>: khi bạn gửi key, máy chủ hỏi Polar để xác thực và chỉ lưu bản băm (SHA-256) của key trong bộ đệm ngắn hạn, không lưu key gốc. Kèm theo là mã khách hàng Polar, gói đang dùng và số ký tự đã dùng trong tháng.</li>
         <li><b>Email</b>: bạn nhập email trực tiếp trên trang thanh toán của Polar. Chúng tôi nhận email qua Polar để gửi thông báo quan trọng về gói và hỗ trợ bạn; trên trang web, email chỉ hiển thị dạng che bớt. Nếu bạn đăng ký danh sách chờ, chúng tôi lưu email đó để báo khi gói mở bán.</li>
@@ -74,10 +74,10 @@
       <div class="tblwrap"><table>
         <thead><tr><th>Dữ liệu</th><th>Thời gian lưu</th></tr></thead>
         <tbody>
-          <tr><td>File âm thanh, phụ đề và văn bản đi kèm</td><td>Tối đa 30 ngày kể từ lần tạo</td></tr>
+          <tr><td>File âm thanh, phụ đề và văn bản đi kèm</td><td>Trong bộ nhớ đệm cho tới khi bạn yêu cầu xoá qua support@dattts.com</td></tr>
           <tr><td>Bộ đếm lượt miễn phí theo IP</td><td>Theo ngày, chỉ giữ để tính hạn mức và chống lạm dụng</td></tr>
           <tr><td>Bản băm API key (bộ đệm xác thực)</td><td>Từ 60 giây đến 24 giờ</td></tr>
-          <tr><td>Số ký tự đã dùng theo key và theo tháng</td><td>Tối đa 24 tháng, để đối soát hạn mức và hoàn tiền</td></tr>
+          <tr><td>Số ký tự đã dùng theo key và theo tháng</td><td>Trong tháng dương lịch đang dùng (giờ Việt Nam), để tính hạn mức và xét hoàn tiền; không lưu lâu dài</td></tr>
           <tr><td>Email danh sách chờ</td><td>Đến khi gói mở bán hoặc khi bạn yêu cầu xoá</td></tr>
           <tr><td>Hoá đơn, giao dịch</td><td>Do Polar lưu theo nghĩa vụ kế toán, thuế của Polar</td></tr>
         </tbody>
@@ -99,7 +99,7 @@
         <h2 id="en-sum">Summary in English</h2>
         <ul>
           <li>DatTTS (dattts.com) is operated by an individual operator, [Tên chủ sở hữu / doanh nghiệp], in Vietnam. No user accounts are required.</li>
-          <li>Text you submit is processed only to synthesize speech and subtitles. Generated audio/subtitle files (and the text embedded in them) are cached and deleted after 30 days. We do not use your text to train models.</li>
+          <li>Text you submit is processed only to synthesize speech and subtitles. Generated audio/subtitle files (and the text embedded in them) are cached so you can replay them; you can ask us to delete them at any time via support@dattts.com. We do not use your text to train models.</li>
           <li>IP addresses are used for daily free-quota counting and abuse prevention. API keys are stored only as SHA-256 hashes in a short-lived validation cache.</li>
           <li><b>Payments are handled by Polar Software Inc., our Merchant of Record and reseller.</b> We never see card details. We receive your email address via Polar to support your subscription.</li>
           <li>We do not sell or rent personal data. Data is shared only with Polar, our infrastructure providers (e.g. Modal Labs), and authorities when legally required; servers may be located outside Vietnam (mainly the US).</li>

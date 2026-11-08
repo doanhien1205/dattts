@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+
+# Dữ liệu chạy local: file âm thanh, kv.json, mô hình
+.data/
+backend/.data/
+models/
+backend/models/
+*.onnx
+*.onnx.data
+
+# Âm thanh / phụ đề sinh ra
+*.wav
+*.mp3
+*.ogg
+*.srt
+*.vtt
+
+# Node / Playwright
+node_modules/
+package-lock.json
+test-results/
+playwright-report/
+
+# Bí mật và rác hệ điều hành
+.env
+.env.*
+.DS_Store
+.modal.toml

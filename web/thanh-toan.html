@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Thanh toán – DatTTS</title>
+<meta name="description" content="Kết quả thanh toán gói DatTTS qua Polar và hướng dẫn nhận API key.">
+<meta name="robots" content="noindex">
+<link rel="canonical" href="https://dattts.com/thanh-toan.html">
+<meta name="theme-color" content="#D63A6E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='10' fill='%23D63A6E'/%3E%3Cpath d='M24 9v22M24 22.5a6.5 6.5 0 1 1 0-.01' stroke='%23fff' stroke-width='3.2' fill='none' stroke-linecap='round'/%3E%3Cpath d='M19 13.5h9' stroke='%23E7A422' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=Fraunces:ital,opsz,wght@0,9..144,600;1,9..144,500;1,9..144,700&family=JetBrains+Mono:wght@400;600&display=swap&subset=vietnamese">
+<script>try{var t=localStorage.getItem('dattts.theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body class="subpage">
+<a class="skip" href="#main">Bỏ qua, tới nội dung chính</a>
+
+<div class="wrap">
+  <nav aria-label="Điều hướng chính">
+    <a class="logo" href="./" aria-label="DatTTS trang chủ">
+      <svg viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="10" fill="var(--lotus)"/>
+        <path d="M24 9v22M24 22.5a6.5 6.5 0 1 1 0-.01" stroke="#fff" stroke-width="3.2" fill="none" stroke-linecap="round"/>
+        <path d="M19 13.5h9" stroke="var(--gold)" stroke-width="3" stroke-linecap="round"/></svg>
+      DatTTS <small>.com</small>
+    </a>
+    <div class="navlinks"><a href="./#studio">Phòng thu</a><a href="./#bang-gia">Bảng giá</a><a href="./#api">API</a><a href="./#hoi-dap">Hỏi đáp</a></div>
+    <button class="iconbtn" id="themeBtn" type="button" aria-label="Đổi giao diện sáng/tối" title="Đổi giao diện sáng/tối">
+      <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>
+      <svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
+    </button>
+  </nav>
+
+  <main id="main">
+    <h2 class="sr-only">Trạng thái thanh toán</h2>
+    <p class="sr-only" id="payLive" role="status" aria-live="polite"></p>
+    <div class="paycard">
+      <div id="payCard">
+        <div class="pstate wait"><i aria-hidden="true"></i><span>Đang tải</span></div>
+        <h1 tabindex="-1">Đang kiểm tra thanh toán…</h1>
+        <noscript><p class="lead">Trang này cần JavaScript để kiểm tra thanh toán. Nếu bạn đã thanh toán, Polar đã gửi API key qua email.</p></noscript>
+      </div>
+
+      <form class="keybox" id="keyForm" novalidate>
+        <h2>Đã có API key?</h2>
+        <p class="note">Dán key bắt đầu bằng <code>DATTTS</code> từ email của Polar. Key được kiểm tra rồi lưu trên trình duyệt này để phòng thu dùng ngay.</p>
+        <label class="sr-only" for="keyInput">API key</label>
+        <div class="keyrow">
+          <input type="text" id="keyInput" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="DATTTS-XXXXXXXX-…" aria-describedby="keyMsg">
+          <button class="btn btn-primary" id="keySave" type="submit"><span class="spinner" aria-hidden="true"></span><span>Lưu key</span></button>
+        </div>
+        <p class="wl-msg" id="keyMsg" role="status" aria-live="polite"></p>
+      </form>
+    </div>
+  </main>
+
+  <footer>
+    <span>© 2026 DatTTS · dattts.com</span>
+    <span>Giọng đọc tạo bởi <a href="https://huggingface.co/pnnbao-ump/VieNeu-TTS-v3-Turbo" rel="noopener">VieNeu-TTS by Phạm Nguyễn Ngọc Bảo</a> (Apache-2.0)</span>
+    <nav class="footlinks" aria-label="Chính sách"><a href="dieu-khoan.html">Điều khoản</a><a href="bao-mat.html">Bảo mật</a><a href="hoan-tien.html">Hoàn tiền</a><a href="mailto:support@dattts.com">support@dattts.com</a></nav>
+  </footer>
+</div>
+
+<script src="config.js"></script>
+<script src="site.js"></script>
+<script src="thanh-toan.js"></script>
+</body>
+</html>

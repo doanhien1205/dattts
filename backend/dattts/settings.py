@@ -7,7 +7,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping
 
-__all__ = ["Settings", "DEFAULT_ALLOWED_ORIGINS"]
+__all__ = ["Settings", "DEFAULT_ALLOWED_ORIGINS", "PAID_PLANS", "PLAN_PERIODS"]
+
+# Gói trả phí (SPEC Phần 3) và kỳ tính hạn mức của từng gói (gói năm: hạn mức theo THÁNG).
+PAID_PLANS = ("pro_week", "pro_month", "pro_year")
+PLAN_PERIODS = {"pro_week": "week", "pro_month": "month", "pro_year": "month"}
 
 DEFAULT_ALLOWED_ORIGINS = (
     "https://dattts.com,https://www.dattts.com,http://localhost:8000,http://127.0.0.1:8000"
@@ -62,25 +66,39 @@ class Settings:
     # Số proxy tin cậy đứng trước app (khi TRUST_PROXY=1): IP khách = phần tử thứ N tính TỪ PHẢI
     # của X-Forwarded-For (phần bên trái do khách tự gửi, không tin được).
     trust_proxy_hops: int = 1
-    # ── Thanh toán qua Polar (SPEC Phần 2). Thiếu POLAR_ACCESS_TOKEN → billing tắt. ──
+    # ── Thanh toán qua Polar (SPEC Phần 2 + 3). Thiếu POLAR_ACCESS_TOKEN → billing tắt. ──
     polar_server: str = "sandbox"
     polar_api_base: str | None = None
     polar_access_token: str | None = None
     polar_organization_id: str | None = None
     polar_webhook_secret: str | None = None
-    polar_product_personal: str | None = None
-    polar_product_unlimited: str | None = None
-    polar_benefit_personal: str | None = None
-    polar_benefit_unlimited: str | None = None
-    plan_personal_monthly_chars: int = 1_000_000
-    plan_unlimited_monthly_chars: int = 20_000_000
+    # Gói Pro tuần/tháng/năm: mỗi gói một sản phẩm + một benefit License Key (từ benefit suy ra gói của key)
+    polar_product_pro_week: str | None = None
+    polar_product_pro_month: str | None = None
+    polar_product_pro_year: str | None = None
+    polar_benefit_pro_week: str | None = None
+    polar_benefit_pro_month: str | None = None
+    polar_benefit_pro_year: str | None = None
+    plan_pro_week_chars: int = 250_000           # ký tự / tuần ISO (giờ VN)
+    plan_pro_month_chars: int = 1_000_000        # ký tự / tháng
+    plan_pro_year_monthly_chars: int = 1_000_000  # gói năm: hạn mức tính theo tháng
     public_base_url: str = "https://dattts.com"
+
+    def polar_product(self, plan: str) -> str | None:
+        return getattr(self, f"polar_product_{plan}", None) if plan in PAID_PLANS else None
+
+    def polar_benefit(self, plan: str) -> str | None:
+        return getattr(self, f"polar_benefit_{plan}", None) if plan in PAID_PLANS else None
+
+    def plan_chars(self, plan: str) -> int:
+        """Hạn mức ký tự của một kỳ (``PLAN_PERIODS[plan]``) của gói."""
+        return int({"pro_week": self.plan_pro_week_chars,
+                    "pro_month": self.plan_pro_month_chars,
+                    "pro_year": self.plan_pro_year_monthly_chars}.get(plan, 0))
 
     def polar_plan_configured(self, plan: str) -> bool:
         """Gói bán được khi có CẢ sản phẩm lẫn benefit License Key (thiếu benefit → key mua về bị từ chối)."""
-        pair = {"personal": (self.polar_product_personal, self.polar_benefit_personal),
-                "unlimited": (self.polar_product_unlimited, self.polar_benefit_unlimited)}.get(plan)
-        return bool(pair and pair[0] and pair[1])
+        return bool(self.polar_product(plan) and self.polar_benefit(plan))
 
     def billing_missing(self) -> list[str]:
         """Biến POLAR_* còn thiếu (rỗng = cấu hình đủ). Không có token → [] (billing tắt có chủ ý)."""
@@ -89,12 +107,11 @@ class Settings:
         missing = []
         if not self.polar_organization_id:
             missing.append("POLAR_ORGANIZATION_ID")
-        for name, val in (("POLAR_PRODUCT_PERSONAL", self.polar_product_personal),
-                          ("POLAR_BENEFIT_PERSONAL", self.polar_benefit_personal),
-                          ("POLAR_PRODUCT_UNLIMITED", self.polar_product_unlimited),
-                          ("POLAR_BENEFIT_UNLIMITED", self.polar_benefit_unlimited)):
-            if not val:
-                missing.append(name)
+        for plan in PAID_PLANS:
+            if not self.polar_product(plan):
+                missing.append(f"POLAR_PRODUCT_{plan.upper()}")
+            if not self.polar_benefit(plan):
+                missing.append(f"POLAR_BENEFIT_{plan.upper()}")
         return missing
 
     @property
@@ -102,7 +119,7 @@ class Settings:
         # Bật khi có token + organization_id (Polar bắt buộc khi validate key) + ít nhất một gói đủ
         # sản phẩm và benefit. Cấu hình dở dang → tắt (fail closed) thay vì bán gói mà key bị từ chối.
         return bool(self.polar_access_token and self.polar_organization_id
-                    and any(self.polar_plan_configured(p) for p in ("personal", "unlimited")))
+                    and any(self.polar_plan_configured(p) for p in PAID_PLANS))
 
     @property
     def polar_base_url(self) -> str:
@@ -139,12 +156,15 @@ class Settings:
             polar_access_token=_opt(e.get("POLAR_ACCESS_TOKEN")),
             polar_organization_id=_opt(e.get("POLAR_ORGANIZATION_ID")),
             polar_webhook_secret=_opt(e.get("POLAR_WEBHOOK_SECRET")),
-            polar_product_personal=_opt(e.get("POLAR_PRODUCT_PERSONAL")),
-            polar_product_unlimited=_opt(e.get("POLAR_PRODUCT_UNLIMITED")),
-            polar_benefit_personal=_opt(e.get("POLAR_BENEFIT_PERSONAL")),
-            polar_benefit_unlimited=_opt(e.get("POLAR_BENEFIT_UNLIMITED")),
-            plan_personal_monthly_chars=max(0, _int(e.get("PLAN_PERSONAL_MONTHLY_CHARS"), 1_000_000)),
-            plan_unlimited_monthly_chars=max(0, _int(e.get("PLAN_UNLIMITED_MONTHLY_CHARS"), 20_000_000)),
+            polar_product_pro_week=_opt(e.get("POLAR_PRODUCT_PRO_WEEK")),
+            polar_product_pro_month=_opt(e.get("POLAR_PRODUCT_PRO_MONTH")),
+            polar_product_pro_year=_opt(e.get("POLAR_PRODUCT_PRO_YEAR")),
+            polar_benefit_pro_week=_opt(e.get("POLAR_BENEFIT_PRO_WEEK")),
+            polar_benefit_pro_month=_opt(e.get("POLAR_BENEFIT_PRO_MONTH")),
+            polar_benefit_pro_year=_opt(e.get("POLAR_BENEFIT_PRO_YEAR")),
+            plan_pro_week_chars=max(0, _int(e.get("PLAN_PRO_WEEK_CHARS"), 250_000)),
+            plan_pro_month_chars=max(0, _int(e.get("PLAN_PRO_MONTH_CHARS"), 1_000_000)),
+            plan_pro_year_monthly_chars=max(0, _int(e.get("PLAN_PRO_YEAR_MONTHLY_CHARS"), 1_000_000)),
             public_base_url=_opt(e.get("PUBLIC_BASE_URL")) or "https://dattts.com",
         )
         for k, v in overrides.items():

@@ -1,13 +1,15 @@
-/* DatTTS — phòng thu web. Nói chuyện với API theo SPEC (tiền tố /api). */
+/* DatTTS — phòng thu web. Nói chuyện với API theo SPEC (tiền tố /api).
+   Mọi chuỗi giao diện đi qua t() trong i18n.js (en + vi); chỉ văn bản mẫu để đọc là tiếng Việt cứng. */
 (() => {
   'use strict';
 
   // ---------- tiện ích ----------
+  const I = window.I18N, t = I.t;
   const API = String(window.DATTTS_API || '').replace(/\/+$/, '');
-  const SYNC_MAX = 3000, JOB_MAX = 100000, DICT_MAX = 200;
+  const SYNC_MAX = 3000, JOB_MAX = 100000, DICT_MAX = 200, FREE_DAILY = 20000;
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
-  const fmtN = n => Math.round(n).toLocaleString('vi-VN');
+  const fmtN = n => I.fmtNum(Math.round(n));
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const apiUrl = p => (/^(https?:|blob:|data:)/.test(p) ? p : API + p);
@@ -21,29 +23,29 @@
   // API key (License Key do Polar cấp, hoặc key nội bộ). Gửi qua header X-API-Key cho mọi request /api.
   let apiKey = String(store.get('apikey', '') || '').trim();
   const INVALID_KEY_CODES = ['invalid_api_key', 'bad_api_key'];
-  const INVALID_KEY_MSG = 'API key không còn hợp lệ (gói có thể đã hết hạn hoặc key đã được đổi) nên đã được gỡ khỏi trình duyệt này. Bạn đang dùng lượt miễn phí; hãy kiểm tra lại key trong email của Polar hoặc cổng khách hàng rồi nhập lại.';
-  const VN_TZ = { timeZone: 'Asia/Ho_Chi_Minh' };
   function clock(s) {
     s = Math.max(0, Math.floor(s || 0));
     const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, ss = s % 60, p = x => String(x).padStart(2, '0');
     return (h ? h + ':' + p(m) : p(m)) + ':' + p(ss);
   }
   function humanDur(sec) {
-    if (sec < 60) return Math.max(1, Math.round(sec)) + ' giây';
-    if (sec < 3600) { const m = Math.floor(sec / 60), s = Math.round(sec % 60); return m + ' phút' + (s ? ' ' + s + ' giây' : ''); }
-    return (sec / 3600).toFixed(1).replace('.', ',') + ' giờ';
+    if (sec < 60) return t('dur.sec', { n: Math.max(1, Math.round(sec)) });
+    if (sec < 3600) { const m = Math.floor(sec / 60), s = Math.round(sec % 60); return s ? t('dur.minSec', { m, s }) : t('dur.min', { m }); }
+    return t('dur.hour', { h: I.fmtNum(sec / 3600, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) });
   }
   // Giống count_chars của máy chủ: NFC, bỏ ký tự điều khiển, gộp khoảng trắng, giữ xuống dòng đoạn.
-  function cleanText(t) {
-    return String(t || '').normalize('NFC').replace(/\r\n?/g, '\n')
+  function cleanText(s) {
+    return String(s || '').normalize('NFC').replace(/\r\n?/g, '\n')
       .replace(/[\u0000-\u0009\u000B-\u001F\u007F​-‍﻿]/g, ' ')
       .replace(/[ \t ]+/g, ' ').replace(/ *\n */g, '\n').replace(/\n{3,}/g, '\n\n').trim();
   }
-  const countChars = t => cleanText(t).length;
+  const countChars = s => cleanText(s).length;
+  const charsLabel = n => I.tp('count.chars', n, { n: fmtN(n) });
 
   class ApiError extends Error { constructor(message, code, status) { super(message); this.code = code; this.status = status; } }
   async function api(path, opts = {}) {
-    const init = { method: opts.method || 'GET', headers: { Accept: 'application/json' }, signal: opts.signal };
+    // Accept-Language theo ngôn ngữ đang chọn → máy chủ trả error.message đúng ngôn ngữ.
+    const init = { method: opts.method || 'GET', headers: { Accept: 'application/json', 'Accept-Language': I.lang }, signal: opts.signal };
     if (opts.body !== undefined) { init.headers['Content-Type'] = 'application/json'; init.body = JSON.stringify(opts.body); }
     // opts.key: thử một key cụ thể (hộp nhập key); opts.key === '' → không gửi key.
     const sentKey = opts.key !== undefined ? opts.key : apiKey;
@@ -51,8 +53,8 @@
     let res;
     try { res = await fetch(apiUrl(path), init); }
     catch (e) {
-      if (e && e.name === 'AbortError') throw new ApiError('Máy chủ phản hồi quá lâu. Thử lại sau ít phút nhé.', 'timeout', 0);
-      throw new ApiError('Không kết nối được máy chủ DatTTS. Kiểm tra mạng rồi thử lại.', 'network', 0);
+      if (e && e.name === 'AbortError') throw new ApiError(t('err.timeout'), 'timeout', 0);
+      throw new ApiError(t('err.network'), 'network', 0);
     }
     let data = null;
     try { data = await res.json(); } catch (e) { /* không phải JSON */ }
@@ -62,16 +64,29 @@
         // Key hỏng/hết hạn: nếu là key đang lưu thì gỡ ra để khách biết và quay về lượt miễn phí.
         if (opts.key === undefined && sentKey === apiKey) {
           onInvalidKey();
-          throw new ApiError(INVALID_KEY_MSG, 'invalid_api_key', 401);
+          throw new ApiError(t('err.keyRemoved'), 'invalid_api_key', 401);
         }
-        throw new ApiError('Key không đúng hoặc đã hết hạn. Kiểm tra lại key trong email Polar gửi bạn (bắt đầu bằng DATTTS).', 'invalid_api_key', 401);
+        throw new ApiError(t('err.keyBad'), 'invalid_api_key', 401);
       }
-      const fallback = res.status === 429 ? 'Bạn đã dùng hết lượt miễn phí hôm nay.' : res.status >= 500 ? 'Máy chủ đang gặp sự cố. Thử lại sau ít phút nhé.' : 'Yêu cầu chưa hợp lệ (mã ' + res.status + ').';
+      const fallback = res.status === 429 ? t('err.quota') : res.status >= 500 ? t('err.server') : t('err.badRequest', { code: res.status });
       throw new ApiError((er && er.message) || fallback, (er && er.code) || 'http_' + res.status, res.status);
     }
-    if (data == null) throw new ApiError('Máy chủ trả về dữ liệu không đọc được.', 'bad_response', res.status);
+    if (data == null) throw new ApiError(t('err.badResponse'), 'bad_response', res.status);
     return data;
   }
+
+  // ---------- neo cũ tiếng Việt → neo tiếng Anh ----------
+  const OLD_ANCHORS = { 'thanh-dieu': 'tones', 'tinh-gia': 'calculator', 'bang-gia': 'pricing', 'hoi-dap': 'faq', 'phong-thu': 'studio' };
+  function mapHash() {
+    const h = decodeURIComponent(location.hash.slice(1));
+    const to = OLD_ANCHORS[h];
+    if (!to) return;
+    try { history.replaceState(null, '', location.pathname + location.search + '#' + to); } catch (e) { /* bỏ qua */ }
+    const el = document.getElementById(to);
+    if (el) el.scrollIntoView({ block: 'start' });
+  }
+  addEventListener('hashchange', mapHash);
+  mapHash();
 
   // ---------- phần tử ----------
   const txt = $('#txt'), studio = $('#studio'), audio = $('#audio');
@@ -84,18 +99,21 @@
   let busy = false, current = null, showAllVoices = false;
 
   function announce(m) { statusEl.textContent = ''; setTimeout(() => { statusEl.textContent = m; }, 30); }
-  function toast(m) { const t = $('#toast'); t.textContent = m; t.hidden = false; clearTimeout(t._h); t._h = setTimeout(() => { t.hidden = true; }, 3200); }
-  function setRec(label, cls) {
-    $('#recLabel').textContent = label;
+  function toast(m) { const el = $('#toast'); el.textContent = m; el.hidden = false; clearTimeout(el._h); el._h = setTimeout(() => { el.hidden = true; }, 3200); }
+  let recKey = 'rec.connecting';
+  function setRec(key, cls) {
+    recKey = key;
+    $('#recLabel').textContent = t(key);
     studio.classList.toggle('live', cls === 'live'); studio.classList.toggle('ready', cls === 'ready');
   }
+  const idleRec = () => setRec(online ? 'rec.ready' : (document.body.classList.contains('offline') ? 'rec.preview' : 'rec.connecting'), online ? 'ready' : '');
 
   // ---------- thông báo lỗi trong trang ----------
   const alertEl = $('#alert');
   function showAlert(msg, kind) {
     alertEl.className = 'alert' + (kind === 'info' ? ' info' : '');
     alertEl.setAttribute('role', kind === 'info' ? 'status' : 'alert');
-    alertEl.innerHTML = '<span>' + esc(msg) + '</span><button class="x" type="button" aria-label="Đóng thông báo">×</button>';
+    alertEl.innerHTML = '<span>' + esc(msg) + '</span><button class="x" type="button" aria-label="' + esc(t('alert.close')) + '">×</button>';
     alertEl.hidden = false;
     $('.x', alertEl).onclick = hideAlert;
   }
@@ -117,14 +135,19 @@
 
   // ---------- giọng đọc ----------
   const genderKey = g => (/^(f|female|nu|nữ|woman)/i.test(String(g || '')) ? 'female' : 'male');
-  const genderLabel = g => (genderKey(g) === 'female' ? 'Nữ' : 'Nam');
+  const genderLabel = g => t('gender.' + genderKey(g));
+  // Giá trị vùng giữ nguyên dạng API ("Bắc"/"Trung"/"Nam") để lọc; nhãn hiển thị dịch qua t().
   function regionKey(r) {
     const s = String(r || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
     return /bac|north/.test(s) ? 'Bắc' : /trung|central/.test(s) ? 'Trung' : /nam|south/.test(s) ? 'Nam' : String(r || '');
   }
+  const REGION_ID = { 'Bắc': 'north', 'Trung': 'central', 'Nam': 'south' };
+  const regionLabel = r => (REGION_ID[r] ? t('regionShort.' + REGION_ID[r]) : r);
   const regionClass = r => ({ 'Bắc': 'r-bac', 'Trung': 'r-trung', 'Nam': 'r-nam' }[r] || 'r-bac');
-  const styleLabel = v => v.style_label || ({ tu_nhien: 'Tự nhiên', tin_tuc: 'Tin tức', doc_truyen: 'Kể chuyện' }[v.style] || '');
-  const voiceMeta = v => [genderLabel(v.gender), v.region, styleLabel(v)].filter(Boolean).join(' · ');
+  const styleLabel = v => (I.has('style.' + v.style) ? t('style.' + v.style) : (v.style_label || ''));
+  const voiceMeta = v => [genderLabel(v.gender), regionLabel(v.region), styleLabel(v)].filter(Boolean).join(' · ');
+  // Mô tả giọng từ API là tiếng Việt → chỉ hiện ở chế độ VI.
+  const voiceDesc = v => (I.lang === 'vi' && v.description ? v.description : '');
   function initials(name) {
     const w = String(name).trim().split(/\s+/);
     return (w[0][0] + (w.length > 1 ? w[w.length - 1][0] : '')).toUpperCase();
@@ -137,6 +160,10 @@
   }
   const voiceName = id => (voiceByAny(id) || { name: id }).name;
 
+  function renderInsertOptions() {
+    $('#insertVoice').innerHTML = '<option value="">' + esc(t('editor.insert')) + '</option>' +
+      voices.map(v => `<option value="${esc(v.name)}">${esc(v.name)} (${esc(voiceMeta(v))})</option>`).join('');
+  }
   async function loadVoices() {
     const data = await api('/api/voices');
     defaultId = data.default || defaultId;
@@ -144,10 +171,7 @@
     voices.sort((a, b) => (a.featured == null) - (b.featured == null) || (a.featured || 0) - (b.featured || 0));
     voiceMap = new Map(voices.map(v => [v.id, v]));
     if (!voiceMap.has(selectedId)) selectedId = voiceMap.has(defaultId) ? defaultId : (voices[0] && voices[0].id);
-    const ins = $('#insertVoice');
-    ins.innerHTML = '<option value="">＋ Chèn giọng…</option>' +
-      voices.map(v => `<option value="${esc(v.name)}">${esc(v.name)} (${esc(voiceMeta(v))})</option>`).join('');
-    renderVoices(); renderCurrentVoice();
+    renderInsertOptions(); renderVoices(); renderCurrentVoice();
   }
 
   function filteredVoices() {
@@ -164,23 +188,23 @@
     grid.innerHTML = shown.map(v => {
       const sel = v.id === selectedId;
       return `<div class="vcard${sel ? ' sel' : ''}" role="listitem" data-id="${esc(v.id)}">
-        <button class="vpick" type="button" aria-pressed="${sel}" title="${esc(v.description || '')}">
+        <button class="vpick" type="button" aria-pressed="${sel}" title="${esc(voiceDesc(v))}">
           <span class="avatar ${regionClass(v.region)}" aria-hidden="true">${esc(initials(v.name))}</span>
           <span class="txt"><b>${esc(v.name)}</b><small>${esc(voiceMeta(v))}</small></span>
         </button>
-        <button class="vplay" type="button" aria-label="Nghe mẫu giọng ${esc(v.name)}">
+        <button class="vplay" type="button" aria-label="${esc(t('voices.sample', { name: v.name }))}">
           <svg class="i-play" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 1.5v11l9.5-5.5z"/></svg>
           <svg class="i-pause" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 1.5h3v11H3zM8 1.5h3v11H8z"/></svg>
         </button>
-        ${v.featured != null && v.featured <= 3 ? '<span class="star" aria-hidden="true">Nổi bật</span>' : ''}
+        ${v.featured != null && v.featured <= 3 ? '<span class="star" aria-hidden="true">' + esc(t('voices.featured')) + '</span>' : ''}
       </div>`;
     }).join('');
-    $('#voiceCount').textContent = filtered ? `${list.length}/${voices.length} giọng` : `${voices.length} giọng`;
+    $('#voiceCount').textContent = filtered ? t('voices.countFiltered', { n: fmtN(list.length), total: fmtN(voices.length) }) : I.tp('voices.count', voices.length, { n: fmtN(voices.length) });
     $('#vEmpty').hidden = list.length > 0;
     const more = $('#moreVoices');
     const hiddenN = list.length - shown.length;
     more.hidden = filtered || (hiddenN <= 0 && !showAllVoices);
-    more.textContent = showAllVoices ? 'Thu gọn' : `Xem thêm ${hiddenN} giọng`;
+    more.textContent = showAllVoices ? t('voices.less') : I.tp('voices.more', hiddenN, { n: fmtN(hiddenN) });
     more.setAttribute('aria-expanded', String(showAllVoices));
     // giữ trạng thái nút nghe mẫu khi vẽ lại
     if (!sampleAudio.paused && sampleAudio.dataset.voice) {
@@ -190,8 +214,9 @@
   }
   function renderCurrentVoice() {
     const v = voiceMap.get(selectedId); if (!v) return;
+    const d = voiceDesc(v);
     $('#currentVoice').innerHTML = `<span class="avatar ${regionClass(v.region)}" aria-hidden="true">${esc(initials(v.name))}</span>
-      <span><b>${esc(v.name)}</b><small>${esc(voiceMeta(v))}${v.description && !/·/.test(v.description) ? ' — ' + esc(v.description) : ''}</small></span>`;
+      <span><b>${esc(v.name)}</b><small>${esc(voiceMeta(v))}${d && !/·/.test(d) ? ' — ' + esc(d) : ''}</small></span>`;
   }
   function selectVoice(id, quiet) {
     if (!voiceMap.has(id)) return;
@@ -200,12 +225,12 @@
       const on = c.dataset.id === id; c.classList.toggle('sel', on); $('.vpick', c).setAttribute('aria-pressed', String(on));
     });
     renderCurrentVoice();
-    if (!quiet) announce('Đã chọn giọng ' + voiceName(id));
+    if (!quiet) announce(t('voices.selected', { name: voiceName(id) }));
   }
   function setSampleBtn(b, on) {
     b.classList.toggle('playing', on);
     const name = voiceName(b.closest('.vcard').dataset.id);
-    b.setAttribute('aria-label', (on ? 'Dừng mẫu giọng ' : 'Nghe mẫu giọng ') + name);
+    b.setAttribute('aria-label', t(on ? 'voices.stopSample' : 'voices.sample', { name }));
   }
   function stopSample() {
     sampleAudio.pause();
@@ -231,7 +256,7 @@
   sampleAudio.addEventListener('error', () => {
     if (!sampleAudio.getAttribute('src')) return;
     const playingVoice = $('.vplay.playing'); stopSample();
-    if (playingVoice) toast('Chưa nghe được giọng mẫu. Thử lại sau giây lát.');
+    if (playingVoice) toast(t('voices.sampleErr'));
   });
 
   $('#vgrid').addEventListener('click', e => {
@@ -260,7 +285,7 @@
     const name = e.target.value; if (!name) return;
     e.target.value = '';
     insertAtCursor('[' + name + ']');
-    announce('Đã chèn thẻ giọng ' + name);
+    announce(t('editor.inserted', { name }));
   });
 
   function pickVoiceName(pref, gender, avoid) {
@@ -269,6 +294,7 @@
     const alt = voices.find(x => x.gender === gender && x.name !== avoid);
     return alt ? alt.name : pref;
   }
+  // Văn bản mẫu để ĐỌC: luôn là tiếng Việt (sản phẩm đọc tiếng Việt), ở cả hai chế độ ngôn ngữ.
   const SAMPLES = {
     podcast() {
       const a = pickVoiceName('Trúc Ly', 'female'), b = pickVoiceName('Thiện Minh', 'male', a);
@@ -284,11 +310,11 @@
   };
   $$('[data-sample]').forEach(b => b.addEventListener('click', () => {
     stopSpeech(); txt.value = SAMPLES[b.dataset.sample](); updateCount(); txt.focus();
-    if (b.dataset.sample === 'podcast') announce('Đã điền mẫu podcast hai giọng');
+    if (b.dataset.sample === 'podcast') announce(t('sample.podcastDone'));
   }));
 
   const rate = $('#rate');
-  function syncRate() { $('#rateV').textContent = (+rate.value).toFixed(2).replace('.', ',') + '×'; updateCount(); }
+  function syncRate() { $('#rateV').textContent = I.fmtNum(+rate.value, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '×'; updateCount(); }
   rate.addEventListener('input', syncRate);
   rate.value = store.get('speed', 1); rate.addEventListener('change', () => store.set('speed', +rate.value));
   const savedFmt = store.get('format', 'mp3');
@@ -296,18 +322,20 @@
   const getFmt = () => ($('input[name="fmt"]:checked') || { value: 'mp3' }).value;
 
   let quota = null;
+  // Kỳ hạn mức: máy chủ trả period (day|week|month); bản cũ không có → suy ra từ việc có key hay không.
+  const quotaPeriod = q => (q && /^(day|week|month)$/.test(q.period) ? q.period : (apiKey ? 'month' : 'day'));
   function updateCount() {
     const n = countChars(txt.value);
-    $('#count').textContent = fmtN(n) + ' ký tự';
+    $('#count').textContent = charsLabel(n);
     const mode = $('#mode');
     mode.className = '';
     if (!online) mode.textContent = '';
-    else if (n > JOB_MAX) { mode.textContent = 'vượt giới hạn ' + fmtN(JOB_MAX) + ' ký tự'; mode.className = 'over'; }
-    else if (quota && quota.remaining != null && n > quota.remaining) { mode.textContent = apiKey ? 'vượt hạn mức còn lại tháng này' : 'vượt lượt còn lại hôm nay'; mode.className = 'over'; }
-    else if (n > SYNC_MAX) mode.textContent = 'văn bản dài · chạy nền';
-    else mode.textContent = 'tạo ngay';
+    else if (n > JOB_MAX) { mode.textContent = t('mode.overMax', { n: fmtN(JOB_MAX) }); mode.className = 'over'; }
+    else if (quota && quota.remaining != null && n > quota.remaining) { mode.textContent = t('mode.overQuota.' + quotaPeriod(quota)); mode.className = 'over'; }
+    else if (n > SYNC_MAX) mode.textContent = t('mode.long');
+    else mode.textContent = t('mode.instant');
     const sec = n / 25 / parseFloat(rate.value || 1);
-    $('#estTime').textContent = '≈ ' + humanDur(sec) + ' âm thanh';
+    $('#estTime').textContent = t('est.audio', { d: humanDur(sec) });
   }
   txt.addEventListener('input', updateCount);
   txt.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); generate(); } });
@@ -318,24 +346,24 @@
     quota = q;
     const box = $('#quotaBox'); box.hidden = false;
     const unlimited = q.limit == null || q.limit <= 0 || q.remaining == null;
-    if (unlimited) { $('#quotaText').textContent = 'Không giới hạn ký tự'; $('#quotaFill').style.width = '100%'; box.className = 'quota'; return; }
+    if (unlimited) { $('#quotaText').textContent = t('quota.unlimited'); $('#quotaFill').style.width = '100%'; box.className = 'quota'; box.title = ''; return; }
     const rem = Math.max(0, q.remaining);
-    $('#quotaText').textContent = `${apiKey ? 'Tháng này còn' : 'Hôm nay còn'} ${fmtN(rem)} / ${fmtN(q.limit)} ký tự`;
+    $('#quotaText').textContent = t('quota.left.' + quotaPeriod(q), { rem: fmtN(rem), limit: fmtN(q.limit) });
     $('#quotaFill').style.width = Math.max(0, Math.min(100, rem / q.limit * 100)) + '%';
     box.className = 'quota' + (rem === 0 ? ' out' : rem < q.limit * 0.15 ? ' low' : '');
-    box.title = q.reset_at ? 'Làm mới lúc ' + fmtDateTime(q.reset_at) : '';
+    box.title = q.reset_at ? t('quota.resets', { when: fmtDateTime(q.reset_at) }) : '';
     updateCount();
   }
-  // Hạn mức reset theo giờ Việt Nam → hiển thị theo giờ Việt Nam, dạng 00:00 01/12.
-  const fmtDate = iso => { const p = new Intl.DateTimeFormat('en-GB', Object.assign({ day: '2-digit', month: '2-digit' }, VN_TZ)).formatToParts(new Date(iso)); const g = t => (p.find(x => x.type === t) || {}).value; return g('day') + '/' + g('month'); };
-  const fmtDateTime = iso => new Intl.DateTimeFormat('en-GB', Object.assign({ hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }, VN_TZ)).format(new Date(iso)) + ' ' + fmtDate(iso) + ' (giờ VN)';
+  // Hạn mức reset theo giờ Việt Nam → hiển thị theo giờ Việt Nam, định dạng theo ngôn ngữ đang chọn.
+  const fmtDate = iso => I.fmtDate(iso, { day: 'numeric', month: 'short' });
+  const fmtDateTime = iso => t('tz.vn', { when: I.fmtDate(iso, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', day: 'numeric', month: 'short' }) });
   async function loadQuota() { try { setQuota(await api('/api/quota')); } catch (e) { /* không bắt buộc */ } }
 
   // ---------- từ điển phát âm ----------
   const DICT_DEFAULT = [{ from: 'HLV', to: 'huấn luyện viên' }, { from: 'AI', to: 'ây ai' }];
   let dict = store.get('dict', null);
   if (!Array.isArray(dict)) dict = DICT_DEFAULT.map(x => Object.assign({}, x));
-  function saveDict() { store.set('dict', dict); const n = dictEntries().length; $('#dictCount').textContent = n ? `(${n} mục)` : ''; }
+  function saveDict() { store.set('dict', dict); const n = dictEntries().length; $('#dictCount').textContent = n ? '(' + I.tp('dict.count', n, { n: fmtN(n) }) + ')' : ''; }
   function dictEntries() {
     return dict.map(d => ({ from: String(d.from || '').trim().slice(0, 100), to: String(d.to || '').trim().slice(0, 100) }))
       .filter(d => d.from && d.to).slice(0, DICT_MAX);
@@ -343,15 +371,15 @@
   function renderDict() {
     const box = $('#dictRows');
     box.innerHTML = dict.map((d, i) => `<div class="drow" role="listitem">
-      <input type="text" maxlength="100" value="${esc(d.from || '')}" data-i="${i}" data-k="from" aria-label="Từ gốc, dòng ${i + 1}" placeholder="Từ gốc">
+      <input type="text" maxlength="100" value="${esc(d.from || '')}" data-i="${i}" data-k="from" aria-label="${esc(t('dict.fromAria', { i: i + 1 }))}" placeholder="${esc(t('dict.from'))}">
       <span class="arr" aria-hidden="true">→</span>
-      <input type="text" maxlength="100" value="${esc(d.to || '')}" data-i="${i}" data-k="to" aria-label="Cách đọc, dòng ${i + 1}" placeholder="Cách đọc">
-      <button class="iconbtn" type="button" data-del="${i}" aria-label="Xoá dòng ${i + 1}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+      <input type="text" maxlength="100" value="${esc(d.to || '')}" data-i="${i}" data-k="to" aria-label="${esc(t('dict.toAria', { i: i + 1 }))}" placeholder="${esc(t('dict.to'))}">
+      <button class="iconbtn" type="button" data-del="${i}" aria-label="${esc(t('dict.del', { i: i + 1 }))}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
     </div>`).join('');
     $('#dictAdd').disabled = dict.length >= DICT_MAX;
     saveDict();
   }
-  $('#dictRows').addEventListener('input', e => { const t = e.target; if (t.dataset.i == null) return; dict[+t.dataset.i][t.dataset.k] = t.value; saveDict(); });
+  $('#dictRows').addEventListener('input', e => { const el = e.target; if (el.dataset.i == null) return; dict[+el.dataset.i][el.dataset.k] = el.value; saveDict(); });
   $('#dictRows').addEventListener('click', e => {
     const b = e.target.closest('[data-del]'); if (!b) return;
     const i = +b.dataset.del; dict.splice(i, 1); renderDict();
@@ -368,21 +396,23 @@
     const pct = Math.round(Math.max(0, Math.min(1, frac || 0)) * 100);
     if (kind === 'det') { pfill.style.width = pct + '%'; ptrack.setAttribute('aria-valuenow', String(pct)); }
     else { pfill.style.width = ''; ptrack.removeAttribute('aria-valuenow'); }
-    ptrack.setAttribute('aria-valuetext', label || (kind === 'indet' ? 'Đang xử lý' : pct + '%'));
+    ptrack.setAttribute('aria-valuetext', label || (kind === 'indet' ? t('progress.working') : pct + '%'));
     ptext.textContent = label || '';
     // Báo mốc 25/50/75% cho trình đọc màn hình khi job nền chạy lâu
     if (kind === 'off' || (kind === 'det' && pct < 25)) lastMilestone = 0;
     if (kind === 'det' && pct < 100) {
       const m = Math.floor(pct / 25) * 25;
-      if (m >= 25 && m > lastMilestone) { lastMilestone = m; announce(`Đã tạo được ${m}%`); }
+      if (m >= 25 && m > lastMilestone) { lastMilestone = m; announce(t('progress.milestone', { p: m })); }
     }
   }
-  function setBusy(on, label) {
+  let busyKey = 'gen.busy';
+  function setBusy(on, key) {
     busy = on;
+    if (key) busyKey = key;
     genBtn.classList.toggle('busy', on); genBtn.disabled = on;
     genBtn.setAttribute('aria-busy', String(on));
-    genLabel.textContent = on ? (label || 'Đang tạo…') : (online ? 'Tạo giọng đọc' : 'Đọc thử');
-    if (on) setRec('ĐANG TẠO GIỌNG', 'live'); else setRec(online ? 'PHÒNG THU · SẴN SÀNG' : 'PHÒNG THU · CHẾ ĐỘ THỬ', online ? 'ready' : '');
+    genLabel.textContent = on ? t(busyKey) : (online ? t('gen.label') : t('gen.preview'));
+    if (on) setRec('rec.generating', 'live'); else idleRec();
   }
   function buildBody(format) {
     const b = { text: txt.value, voice: selectedId || defaultId, speed: Math.round(+rate.value * 100) / 100, format: format || getFmt() };
@@ -406,36 +436,37 @@
       catch (e) { if ((e.code === 'network' || e.status >= 500) && ++misses < 4) continue; throw e; }
       onProgress && onProgress(s);
       if (s.status === 'done' && s.result) return s.result;
-      if (s.status === 'error') { const er = s.error || {}; throw new ApiError(er.message || 'Không tạo được giọng đọc. Thử lại nhé.', er.code || 'job_error', 500); }
+      if (s.status === 'error') { const er = s.error || {}; throw new ApiError(er.message || t('err.jobFailed'), er.code || 'job_error', 500); }
     }
   }
   function progressLabel(s) {
-    if (s.status === 'sync') return ['indet', 0, 'Đang đọc văn bản…'];
-    if (s.status === 'queued') return ['det', 0.02, 'Đang xếp hàng…'];
+    if (s.status === 'sync') return ['indet', 0, t('progress.reading')];
+    if (s.status === 'queued') return ['det', 0.02, t('progress.queued')];
     const f = s.progress != null ? s.progress : (s.total ? s.done / s.total : 0);
-    return ['det', Math.max(0.03, f), (s.total ? `Đã đọc ${fmtN(s.done || 0)}/${fmtN(s.total)} câu · ` : '') + Math.round(f * 100) + '%'];
+    const pct = I.fmtNum(Math.round(f * 100)) + '%';
+    return ['det', Math.max(0.03, f), s.total ? t('progress.sentences', { done: fmtN(s.done || 0), total: fmtN(s.total), pct }) : pct];
   }
 
   async function generate() {
     if (busy) return;
     if (!online) { speakOffline(); return; }
     const n = countChars(txt.value);
-    if (!n) { showAlert('Bạn chưa nhập văn bản. Hãy gõ hoặc dán nội dung cần đọc.'); txt.focus(); return; }
-    if (n > JOB_MAX) { showAlert(`Văn bản dài ${fmtN(n)} ký tự, vượt giới hạn ${fmtN(JOB_MAX)} ký tự mỗi lần. Hãy chia thành nhiều phần.`); return; }
+    if (!n) { showAlert(t('err.empty')); txt.focus(); return; }
+    if (n > JOB_MAX) { showAlert(t('err.tooLong', { n: fmtN(n), max: fmtN(JOB_MAX) })); return; }
     hideAlert(); exclusive('main');
     primeAudio(); // trong cử chỉ người dùng (trước mọi await) — Safari/iOS bắt buộc
     const body = buildBody();
-    setBusy(true, n > SYNC_MAX ? 'Đang xử lý…' : 'Đang tạo…');
+    setBusy(true, n > SYNC_MAX ? 'gen.busyLong' : 'gen.busy');
     const t0 = performance.now();
     try {
       const res = await synthesize(body, s => { const [k, f, l] = progressLabel(s); setProgress(k, f, l); });
-      setProgress('det', 1, 'Xong!');
+      setProgress('det', 1, t('progress.done'));
       loadResult(res, body, true);
       addHistory(res, body);
       if (res.quota) setQuota(res.quota); else loadQuota();
       if (apiKey && me) loadMe();
-      const secs = ((performance.now() - t0) / 1000).toFixed(1).replace('.', ',');
-      announce(`Đã tạo xong ${humanDur(res.duration || 0)} âm thanh` + (res.cached ? ' (bản có sẵn, không tính ký tự)' : ` trong ${secs} giây`));
+      const secs = I.fmtNum((performance.now() - t0) / 1000, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+      announce(res.cached ? t('gen.doneCached', { d: humanDur(res.duration || 0) }) : t('gen.done', { d: humanDur(res.duration || 0), s: secs }));
       setTimeout(() => { if (!busy) setProgress('off'); }, 1200);
     } catch (e) {
       setProgress('off');
@@ -447,7 +478,20 @@
   genBtn.addEventListener('click', generate);
 
   // ---------- trình phát + karaoke ----------
-  let segs = [], segEls = [], curIdx = -2, raf = 0, dragging = false;
+  let segs = [], segEls = [], curIdx = -2, raf = 0, dragging = false, previewChars = 0;
+  function renderPlayerHead() {
+    if (!current) {
+      if (!player.hidden && transcript.classList.contains('words')) {
+        $('#playerTitle').textContent = t('player.preview');
+        $('#playerMeta').textContent = t('player.previewMeta', { chars: charsLabel(previewChars) });
+      }
+      return;
+    }
+    const res = current.res;
+    const voicesUsed = Array.from(new Set(segs.map(s => voiceName(s.voice)).filter(Boolean)));
+    $('#playerTitle').textContent = res.cached ? t('player.titleCached') : t('player.title');
+    $('#playerMeta').textContent = [clock(res.duration), charsLabel(res.chars || 0), voicesUsed.join(', '), (res.format || '').toUpperCase()].filter(Boolean).join(' · ');
+  }
   function loadResult(res, body, autoplay) {
     current = { res, body, alts: {} };
     stopSpeech();
@@ -467,9 +511,7 @@
     });
     transcript.innerHTML = html; transcript.scrollTop = 0;
     segEls = $$('.seg', transcript); curIdx = -2;
-    const voicesUsed = Array.from(new Set(segs.map(s => voiceName(s.voice)).filter(Boolean)));
-    $('#playerTitle').textContent = res.cached ? 'Bản đọc · có sẵn' : 'Bản đọc';
-    $('#playerMeta').textContent = [clock(res.duration), fmtN(res.chars || 0) + ' ký tự', voicesUsed.join(', '), (res.format || '').toUpperCase()].filter(Boolean).join(' · ');
+    renderPlayerHead();
     renderDownloads();
     player.hidden = false;
     audio.src = apiUrl(res.audio_url);
@@ -479,16 +521,18 @@
     if (autoplay) { exclusive('main'); audio.play().catch(() => {}); }
   }
   function renderDownloads() {
+    if (!current) return;
     const r = current.res, f0 = r.format || 'mp3';
     const icon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m-5-5 5 5 5-5M5 20h14"/></svg>';
-    let h = '<span class="lbl">Tải về</span>';
+    let h = '<span class="lbl">' + esc(t('dl.label')) + '</span>';
     ['mp3', 'wav', 'ogg'].forEach(f => {
+      const F = f.toUpperCase();
       const ready = f === f0 ? r.audio_url : current.alts[f];
-      if (ready) h += `<a class="dl" href="${esc(withDownload(apiUrl(ready)))}" download data-fmt="${f}" aria-label="Tải file ${f.toUpperCase()}">${icon}${f.toUpperCase()}</a>`;
-      else if (current.body) h += `<button class="dl alt" type="button" data-alt="${f}" aria-label="Tạo bản ${f.toUpperCase()} rồi tải (không tính thêm ký tự)" title="Đổi sang ${f.toUpperCase()} từ bản vừa nghe rồi tải — không tính thêm ký tự">${icon}${f.toUpperCase()}</button>`;
+      if (ready) h += `<a class="dl" href="${esc(withDownload(apiUrl(ready)))}" download data-fmt="${f}" aria-label="${esc(t('dl.file', { f: F }))}">${icon}${F}</a>`;
+      else if (current.body) h += `<button class="dl alt" type="button" data-alt="${f}" aria-label="${esc(t('dl.alt', { f: F }))}" title="${esc(t('dl.altTitle', { f: F }))}">${icon}${F}</button>`;
     });
-    if (r.srt_url) h += `<a class="dl" href="${esc(withDownload(apiUrl(r.srt_url)))}" download data-fmt="srt" aria-label="Tải phụ đề SRT">${icon}SRT</a>`;
-    if (r.vtt_url) h += `<a class="dl" href="${esc(withDownload(apiUrl(r.vtt_url)))}" download data-fmt="vtt" aria-label="Tải phụ đề VTT">${icon}VTT</a>`;
+    if (r.srt_url) h += `<a class="dl" href="${esc(withDownload(apiUrl(r.srt_url)))}" download data-fmt="srt" aria-label="${esc(t('dl.srt'))}">${icon}SRT</a>`;
+    if (r.vtt_url) h += `<a class="dl" href="${esc(withDownload(apiUrl(r.vtt_url)))}" download data-fmt="vtt" aria-label="${esc(t('dl.vtt'))}">${icon}VTT</a>`;
     $('#downloads').innerHTML = h;
   }
   $('#downloads').addEventListener('click', async e => {
@@ -507,16 +551,16 @@
       if (current !== cur) return;
       renderDownloads();
       const a = $(`#downloads a[data-fmt="${f}"]`); if (a) { a.click(); a.focus(); }
-      announce('Đã tạo bản ' + f.toUpperCase() + ', đang tải về');
+      announce(t('dl.altDone', { f: f.toUpperCase() }));
     } catch (err) {
       showAlert(err.message);
       if (current === cur) renderDownloads();
     } finally { delete cur.pending[f]; }
   });
 
-  function findSeg(t) {
+  function findSeg(time) {
     let lo = 0, hi = segs.length - 1, ans = -1;
-    while (lo <= hi) { const mid = (lo + hi) >> 1; if (segs[mid].start <= t + 0.02) { ans = mid; lo = mid + 1; } else hi = mid - 1; }
+    while (lo <= hi) { const mid = (lo + hi) >> 1; if (segs[mid].start <= time + 0.02) { ans = mid; lo = mid + 1; } else hi = mid - 1; }
     return ans;
   }
   function paint(idx) {
@@ -539,10 +583,10 @@
   }
   const audioDur = () => (isFinite(audio.duration) && audio.duration > 0 ? audio.duration : (current && current.res.duration) || 0);
   function updateTime() {
-    const d = audioDur(), t = audio.currentTime || 0;
-    if (!dragging) seek.value = d ? Math.round(t / d * 1000) : 0;
-    $('#time').textContent = clock(t) + ' / ' + clock(d);
-    seek.setAttribute('aria-valuetext', clock(t) + ' trên ' + clock(d));
+    const d = audioDur(), tm = audio.currentTime || 0;
+    if (!dragging) seek.value = d ? Math.round(tm / d * 1000) : 0;
+    $('#time').textContent = clock(tm) + ' / ' + clock(d);
+    seek.setAttribute('aria-valuetext', t('player.of', { t: clock(tm), d: clock(d) }));
   }
   function sync() {
     updateTime();
@@ -550,16 +594,17 @@
   }
   function tick() { sync(); raf = audio.paused ? 0 : requestAnimationFrame(tick); }
   const playBtn = $('#playPause');
+  const setPlayLabel = () => playBtn.setAttribute('aria-label', t(playBtn.classList.contains('playing') ? 'player.pause' : 'player.play'));
   audio.addEventListener('play', () => {
     exclusive('main');
-    playBtn.classList.add('playing'); playBtn.setAttribute('aria-label', 'Tạm dừng');
-    setRec('ĐANG PHÁT', 'live'); speaking = true; ensureAnalyser();
+    playBtn.classList.add('playing'); setPlayLabel();
+    setRec('rec.playing', 'live'); speaking = true; ensureAnalyser();
     if (!raf) raf = requestAnimationFrame(tick);
     kickWave();
   });
   function onStop() {
-    playBtn.classList.remove('playing'); playBtn.setAttribute('aria-label', 'Phát');
-    if (!busy) setRec(online ? 'PHÒNG THU · SẴN SÀNG' : 'PHÒNG THU · CHẾ ĐỘ THỬ', online ? 'ready' : '');
+    playBtn.classList.remove('playing'); setPlayLabel();
+    if (!busy) idleRec();
     speaking = false; cancelAnimationFrame(raf); raf = 0; sync();
   }
   audio.addEventListener('pause', onStop);
@@ -570,7 +615,7 @@
   audio.addEventListener('durationchange', updateTime);
   audio.addEventListener('error', () => {
     if (!audio.getAttribute('src') || !current) return;
-    showAlert('Không mở được file âm thanh. Có thể file đã hết hạn trên máy chủ — hãy bấm “Tạo giọng đọc” để tạo lại.');
+    showAlert(t('err.audio'));
   });
   playBtn.onclick = () => { if (audio.paused) { primeAudio(); audio.play().catch(() => {}); } else audio.pause(); };
   seek.addEventListener('input', () => { dragging = true; const d = audioDur(); if (d) { audio.currentTime = seek.value / 1000 * d; } sync(); });
@@ -619,7 +664,7 @@
     } catch (e) { analyser = null; }
   }
   function sizeCanvas() { const r = cv.getBoundingClientRect(), d = devicePixelRatio || 1; cv.width = Math.max(1, r.width * d); cv.height = Math.max(1, r.height * d); cx.setTransform(d, 0, 0, d, 0, 0); }
-  function draw(t) {
+  function draw(time) {
     const w = cv.clientWidth, h = cv.clientHeight; cx.clearRect(0, 0, w, h);
     energy += ((speaking ? 1 : 0.08) - energy) * (reduceMotion.matches ? 1 : 0.08);
     const bars = Math.floor(w / 6);
@@ -633,14 +678,14 @@
         const k = Math.floor(Math.abs(i - bars / 2) / (bars / 2) * freq.length * 0.7);
         a = (freq[k] / 255) * h * 0.46 + 1.5;
       } else {
-        const n = Math.sin(i * 0.35 + t / 180) * Math.sin(i * 0.11 - t / 430) + Math.sin(i * 1.7 + t / 90) * 0.35;
+        const n = Math.sin(i * 0.35 + time / 180) * Math.sin(i * 0.11 - time / 430) + Math.sin(i * 1.7 + time / 90) * 0.35;
         a = (Math.abs(n) * 0.8 + 0.12) * energy * (h * 0.42) + 1.5;
       }
       cx.globalAlpha = 0.35 + 0.65 * energy; cx.fillRect(x, h / 2 - a, 3, a * 2);
     }
     cx.globalAlpha = 1;
   }
-  function loop(t) { draw(t); waveRaf = (visible && !reduceMotion.matches && (speaking || energy > 0.09)) ? requestAnimationFrame(loop) : 0; }
+  function loop(time) { draw(time); waveRaf = (visible && !reduceMotion.matches && (speaking || energy > 0.09)) ? requestAnimationFrame(loop) : 0; }
   function kickWave() { if (!waveRaf && !reduceMotion.matches) waveRaf = requestAnimationFrame(loop); else if (reduceMotion.matches) draw(0); }
   function drawOnce() { draw(performance.now()); kickWave(); }
   if ('IntersectionObserver' in window) new IntersectionObserver(es => { visible = es[0].isIntersecting; if (visible) kickWave(); }).observe(cv);
@@ -650,29 +695,29 @@
   const synth = window.speechSynthesis;
   let bVoices = [], viVoice = null, fallbackTimer = null, wordSpans = [], gotBoundary = false;
   function loadBrowserVoices() {
-    if (!synth) { $('#voiceNote').textContent = 'Trình duyệt này không hỗ trợ đọc thử. Hãy dùng Chrome, Edge hoặc Safari.'; $('#voiceNote').className = 'note warn'; return; }
+    const note = $('#voiceNote');
+    if (!synth) { note.textContent = t('offline.noSynth'); note.className = 'note warn'; return; }
     bVoices = synth.getVoices();
-    const sel = $('#voiceSel'); sel.innerHTML = '';
+    const sel = $('#voiceSel'), prev = sel.value; sel.innerHTML = '';
     const vi = bVoices.filter(v => /^vi/i.test(v.lang));
     const list = vi.length ? vi : bVoices;
     list.forEach(v => { const o = document.createElement('option'); o.value = bVoices.indexOf(v); o.textContent = v.name + ' (' + v.lang + ')'; sel.appendChild(o); });
-    if (!list.length) { const o = document.createElement('option'); o.textContent = 'Giọng mặc định của máy'; o.value = ''; sel.appendChild(o); }
+    if (!list.length) { const o = document.createElement('option'); o.textContent = t('offline.defaultVoice'); o.value = ''; sel.appendChild(o); }
     viVoice = vi[0] || null;
-    const note = $('#voiceNote');
-    if (viVoice) { sel.value = bVoices.indexOf(viVoice); note.className = 'note'; note.textContent = `Máy bạn có ${vi.length} giọng tiếng Việt. Giọng AI của DatTTS tự nhiên hơn nhiều khi máy chủ hoạt động.`; }
-    else { note.className = 'note warn'; note.textContent = 'Máy bạn chưa cài giọng tiếng Việt nên bản thử sẽ đọc lơ lớ. Mở bằng Chrome hoặc Edge để nghe giọng Việt chuẩn hơn.'; }
+    if (viVoice) { sel.value = prev && list.some(v => String(bVoices.indexOf(v)) === prev) ? prev : bVoices.indexOf(viVoice); note.className = 'note'; note.textContent = I.tp('offline.hasVi', vi.length, { n: vi.length }); }
+    else { note.className = 'note warn'; note.textContent = t('offline.noVi'); }
   }
   if (synth) { loadBrowserVoices(); if ('onvoiceschanged' in synth) synth.onvoiceschanged = loadBrowserVoices; }
   function stopSpeech() {
     if (synth && (synth.speaking || synth.pending)) synth.cancel();
     clearInterval(fallbackTimer); fallbackTimer = null;
-    if (!online) { speaking = false; setRec('PHÒNG THU · CHẾ ĐỘ THỬ', ''); }
+    if (!online) { speaking = false; idleRec(); }
   }
   function markWord(idx) { wordSpans.forEach((s, i) => { s.className = i < idx ? 'seg said' : i === idx ? 'seg now' : 'seg'; }); }
   function speakOffline() {
     const text = cleanText(txt.value.replace(/\[[^\]\n]{1,40}\]\s*/g, ''));
-    if (!text) { showAlert('Bạn chưa nhập văn bản. Hãy gõ hoặc dán nội dung cần đọc.'); return; }
-    if (!synth) { showAlert('Trình duyệt này không hỗ trợ đọc thử. Hãy dùng Chrome, Edge hoặc Safari.'); return; }
+    if (!text) { showAlert(t('err.empty')); return; }
+    if (!synth) { showAlert(t('offline.noSynth')); return; }
     hideAlert(); exclusive('speech'); synth.cancel(); clearInterval(fallbackTimer);
     // karaoke ước lượng theo từ
     current = null; segs = []; segEls = [];
@@ -685,15 +730,15 @@
       transcript.appendChild(s);
     }
     $('#pcontrols').hidden = true; $('#downloads').innerHTML = '';
-    $('#playerTitle').textContent = 'Đọc thử trên trình duyệt';
-    $('#playerMeta').textContent = fmtN(text.length) + ' ký tự · karaoke ước lượng';
+    previewChars = text.length;
     player.hidden = false;
+    renderPlayerHead();
     const u = new SpeechSynthesisUtterance(text);
     const v = bVoices[+$('#voiceSel').value]; if (v) u.voice = v;
     u.lang = (v && v.lang) || 'vi-VN'; u.rate = +rate.value;
     gotBoundary = false;
     u.onstart = () => {
-      speaking = true; kickWave(); setRec('ĐANG ĐỌC THỬ', 'live'); markWord(0);
+      speaking = true; kickWave(); setRec('rec.previewing', 'live'); markWord(0);
       const per = Math.max(180, 380 / u.rate); let k = 0;
       fallbackTimer = setInterval(() => { if (gotBoundary) { clearInterval(fallbackTimer); return; } k = Math.min(k + 1, wordSpans.length - 1); markWord(k); }, per);
     };
@@ -701,10 +746,10 @@
       if (e.name && e.name !== 'word') return; gotBoundary = true;
       let k = 0; for (let i = 0; i < wordSpans.length; i++) if (+wordSpans[i].dataset.c <= e.charIndex) k = i; markWord(k);
     };
-    u.onend = () => { clearInterval(fallbackTimer); markWord(wordSpans.length); speaking = false; setRec('PHÒNG THU · CHẾ ĐỘ THỬ', ''); };
-    u.onerror = () => { clearInterval(fallbackTimer); speaking = false; setRec('PHÒNG THU · CHẾ ĐỘ THỬ', ''); };
+    u.onend = () => { clearInterval(fallbackTimer); markWord(wordSpans.length); speaking = false; idleRec(); };
+    u.onerror = () => { clearInterval(fallbackTimer); speaking = false; idleRec(); };
     synth.speak(u);
-    announce('Đang đọc thử bằng giọng của trình duyệt');
+    announce(t('offline.speaking'));
   }
   $('#stopBtn').onclick = () => { stopSpeech(); markWord(-1); };
 
@@ -727,20 +772,21 @@
   function renderHistory() {
     const ol = $('#history');
     $('#histEmpty').hidden = history.length > 0;
-    $('#histCount').textContent = history.length ? `(${history.length})` : '';
+    $('#histCount').textContent = history.length ? `(${fmtN(history.length)})` : '';
     ol.innerHTML = history.map((h, i) => {
-      const when = new Date(h.at).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
+      const when = new Date(h.at).toLocaleString(I.locale, { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' });
+      const F = (h.format || '').toUpperCase();
       return `<li class="hitem">
-        <button class="iconbtn" type="button" data-replay="${i}" aria-label="Nghe lại: ${esc(h.excerpt.slice(0, 40))}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l13-7.5z"/></svg></button>
-        <span class="htxt"><span>${esc(h.excerpt)}</span><small>${esc(voiceName(h.voice))} · ${clock(h.duration)} · ${(h.format || '').toUpperCase()} · ${when}</small></span>
-        <a class="iconbtn" href="${esc(withDownload(apiUrl(h.audio_url)))}" download aria-label="Tải ${(h.format || '').toUpperCase()}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m-5-5 5 5 5-5M5 20h14"/></svg></a>
+        <button class="iconbtn" type="button" data-replay="${i}" aria-label="${esc(t('hist.replay', { t: h.excerpt.slice(0, 40) }))}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l13-7.5z"/></svg></button>
+        <span class="htxt"><span lang="vi">${esc(h.excerpt)}</span><small>${esc(voiceName(h.voice))} · ${clock(h.duration)} · ${F} · ${esc(when)}</small></span>
+        <a class="iconbtn" href="${esc(withDownload(apiUrl(h.audio_url)))}" download aria-label="${esc(t('hist.download', { f: F }))}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m-5-5 5 5 5-5M5 20h14"/></svg></a>
       </li>`;
-    }).join('') + (history.length ? '' : '');
+    }).join('');
   }
   $('#history').addEventListener('click', e => {
     const b = e.target.closest('[data-replay]'); if (!b) return;
     const h = history[+b.dataset.replay]; if (!h) return;
-    if (!online) { showAlert('Cần kết nối máy chủ để nghe lại bản đã tạo.'); return; }
+    if (!online) { showAlert(t('err.needServer')); return; }
     hideAlert();
     primeAudio();
     // Dùng đúng từ điển lúc tạo bản này (không phải từ điển hiện tại) để bản WAV/OGG khớp bản đã nghe
@@ -751,122 +797,165 @@
   });
 
   // ---------- thanh điệu ----------
+  // syl là âm tiết tiếng Việt để đọc; tên thanh + nghĩa lấy từ i18n (tone.<id>.nm / tone.<id>.ex).
   const tones = [
-    { syl: 'ma', nm: 'Ngang', ex: 'con ma', p: 'M4 12 L96 12' },
-    { syl: 'mà', nm: 'Huyền', ex: 'nhưng mà', p: 'M4 14 C40 16 70 20 96 24' },
-    { syl: 'má', nm: 'Sắc', ex: 'mẹ, má', p: 'M4 14 C40 14 70 10 96 3' },
-    { syl: 'mả', nm: 'Hỏi', ex: 'mồ mả', p: 'M4 12 C35 22 60 24 96 12' },
-    { syl: 'mã', nm: 'Ngã', ex: 'ngựa, mã số', p: 'M4 12 C30 16 44 20 50 16 L56 22 C70 10 84 6 96 3' },
-    { syl: 'mạ', nm: 'Nặng', ex: 'cây mạ', p: 'M4 14 C40 18 70 24 82 26 L84 26' }
+    { id: 'ngang', syl: 'ma', p: 'M4 12 L96 12' },
+    { id: 'huyen', syl: 'mà', p: 'M4 14 C40 16 70 20 96 24' },
+    { id: 'sac', syl: 'má', p: 'M4 14 C40 14 70 10 96 3' },
+    { id: 'hoi', syl: 'mả', p: 'M4 12 C35 22 60 24 96 12' },
+    { id: 'nga', syl: 'mã', p: 'M4 12 C30 16 44 20 50 16 L56 22 C70 10 84 6 96 3' },
+    { id: 'nang', syl: 'mạ', p: 'M4 14 C40 18 70 24 82 26 L84 26' }
   ];
   const toneCache = new Map();
-  const tg = $('#tones');
-  tones.forEach(t => {
-    const b = document.createElement('button'); b.className = 'tone'; b.type = 'button';
-    b.setAttribute('aria-label', `Nghe “${t.syl}”, thanh ${t.nm.toLowerCase()}, như trong “${t.ex}”`);
-    b.innerHTML = `<span class="syl" aria-hidden="true">${t.syl}</span><svg viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true"><path d="${t.p}"/></svg><span class="nm" aria-hidden="true">${t.nm}</span><span class="ex" aria-hidden="true">${t.ex}</span>`;
-    b.onclick = () => playTone(t, b);
-    tg.appendChild(b);
-  });
-  function speakTone(t, b) {
-    if (!synth) { toast('Trình duyệt này không đọc được âm thanh.'); return; }
-    synth.cancel(); const u = new SpeechSynthesisUtterance(t.syl); if (viVoice) u.voice = viVoice; u.lang = 'vi-VN'; u.rate = 0.8;
+  const tg = $('#tonesGrid');
+  function renderTones() {
+    tg.innerHTML = '';
+    tones.forEach(tn => {
+      const b = document.createElement('button'); b.className = 'tone'; b.type = 'button'; b.dataset.tone = tn.id;
+      const nm = t('tone.' + tn.id + '.nm'), ex = t('tone.' + tn.id + '.ex');
+      b.setAttribute('aria-label', t('tone.aria', { syl: tn.syl, nm, ex }));
+      b.innerHTML = `<span class="syl" lang="vi" aria-hidden="true">${tn.syl}</span><svg viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true"><path d="${tn.p}"/></svg><span class="nm" aria-hidden="true">${esc(nm)}</span><span class="ex" aria-hidden="true">${esc(ex)}</span>`;
+      b.onclick = () => playTone(tn, b);
+      tg.appendChild(b);
+    });
+  }
+  function speakTone(tn, b) {
+    if (!synth) { toast(t('tone.noSynth')); return; }
+    synth.cancel(); const u = new SpeechSynthesisUtterance(tn.syl); if (viVoice) u.voice = viVoice; u.lang = 'vi-VN'; u.rate = 0.8;
     b.classList.add('playing'); u.onend = u.onerror = () => b.classList.remove('playing'); synth.speak(u);
   }
-  async function playTone(t, b) {
+  async function playTone(tn, b) {
     exclusive('sample');
-    if (!online) { speakTone(t, b); return; }
+    if (!online) { speakTone(tn, b); return; }
     b.classList.add('playing');
-    const key = (selectedId || defaultId) + '|' + t.syl;
+    const key = (selectedId || defaultId) + '|' + tn.syl;
     try {
       let url = toneCache.get(key);
       if (!url) {
-        const res = await api('/api/tts', { method: 'POST', body: { text: t.syl + '.', voice: selectedId || defaultId, format: 'mp3' } });
+        const res = await api('/api/tts', { method: 'POST', body: { text: tn.syl + '.', voice: selectedId || defaultId, format: 'mp3' } });
         url = apiUrl(res.audio_url); toneCache.set(key, url); if (res.quota) setQuota(res.quota);
       }
       if (!b.classList.contains('playing')) return;
       sampleAudio.src = url; sampleAudio.dataset.voice = '';
       await sampleAudio.play();
-    } catch (e) { b.classList.remove('playing'); speakTone(t, b); }
+    } catch (e) { b.classList.remove('playing'); speakTone(tn, b); }
   }
 
-  // ---------- máy tính chi phí (thanh trượt log 500 → 2.000.000 ký tự) ----------
+  // ---------- giá: định dạng ----------
   const VND_PER_USD = Number(window.DATTTS_VND_PER_USD) > 0 ? Number(window.DATTTS_VND_PER_USD) : 25400;
-  // Giá gói (đơn vị nhỏ nhất, ví dụ cent) và hạn mức lấy từ /api/billing/plans; chưa có thì để null.
+  // Giá gói (cent) và hạn mức lấy từ /api/billing/plans; chưa có thì để null.
   let billing = { enabled: false, loaded: false, plans: [] };
   let buying = false; // đang tạo phiên thanh toán (xem buy())
   const planById = id => billing.plans.find(p => p && p.id === id) || null;
-  const toVnd = p => (p && p.price != null && String(p.currency || 'usd').toLowerCase() === 'usd') ? Math.round(p.price / 100 * VND_PER_USD / 1000) * 1000 : null;
-  function fmtMoney(p) {
-    const cur = String(p.currency || 'usd').toUpperCase();
-    try { return new Intl.NumberFormat('en-US', { style: 'currency', currency: cur, minimumFractionDigits: p.price % 100 ? 2 : 0 }).format(p.price / 100); }
-    catch (e) { return (p.price / 100).toFixed(2) + ' ' + cur; }
-  }
-  const intervalLabel = i => (i === 'year' ? 'năm' : i === 'month' ? 'tháng' : '');
+  const isUsd = p => String((p && p.currency) || billing.currency || 'usd').toLowerCase() === 'usd';
+  const vndOfUsd = usd => Math.round(usd * VND_PER_USD / 1000) * 1000;
+  const fmtVnd = v => I.fmtNum(v) + 'đ';
+  const fmtMoney = p => I.fmtMoney(p.price, (p.currency || billing.currency || 'usd'));
+  const fmtUsd = usd => I.fmtMoney(Math.round(usd * 100), 'usd', usd >= 100 ? 0 : undefined);
+  const CYCLES = ['week', 'month', 'year'];
+  const PLAN_OF = { week: 'pro_week', month: 'pro_month', year: 'pro_year' };
+  // Hạn mức mặc định theo SPEC, dùng khi API chưa trả (hoặc bản cũ).
+  const DEFAULT_CHARS = { pro_week: 250000, pro_month: 1000000, pro_year: 1000000 };
+  const planChars = id => { const p = planById(id); const c = p && (p.chars != null ? p.chars : p.monthly_chars); return typeof c === 'number' && c > 0 ? c : DEFAULT_CHARS[id]; };
+  const planPeriod = id => { const p = planById(id); return (p && /^(day|week|month)$/.test(p.period)) ? p.period : (id === 'pro_week' ? 'week' : 'month'); };
+
+  // ---------- máy tính chi phí (thanh trượt log 500 → 2.000.000 ký tự / tháng) ----------
+  const INTL_USD_PER_M = 16, HUMAN_USD_PER_MIN = 6, CHARS_PER_MIN = 1500;
   const cs = $('#chars');
-  $('#fxRate').textContent = fmtN(VND_PER_USD);
   const toChars = v => Math.round(500 * Math.pow(4000, v / 100) / 100) * 100 || 500;
   const toSlider = c => Math.log(c / 500) / Math.log(4000) * 100;
   function calc() {
     const c = toChars(+cs.value); $('#charsV').textContent = fmtN(c);
-    const min = c / 1500;
-    $('#audioLen').textContent = '≈ ' + (min < 1 ? Math.max(1, Math.round(min * 60)) + ' giây' : (min < 60 ? Math.round(min) + ' phút' : (min / 60).toFixed(1).replace('.', ',') + ' giờ')) + ' âm thanh';
-    const pers = planById('personal'), unl = planById('unlimited');
-    const persChars = (pers && pers.monthly_chars) || 1000000;
-    let ours, plan, planObj = null;
-    // Miễn phí 20.000 ký tự MỖI NGÀY ≈ 600.000 ký tự/tháng nếu chia đều
-    if (c <= 20000 * 30) { ours = 0; plan = c <= 20000 ? 'nằm trong lượt miễn phí hằng ngày' : 'miễn phí nếu chia đều ≤ 20.000 ký tự/ngày'; }
-    else if (c <= persChars) { planObj = pers; ours = toVnd(pers); plan = 'gói Cá nhân'; }
-    else { planObj = unl; ours = toVnd(unl); plan = 'gói Không giới hạn'; }
-    const intl = c / 1e6 * 16 * VND_PER_USD, human = min * 150000;
-    if (ours == null) {
-      $('#ourCost').innerHTML = esc(plan.charAt(0).toUpperCase() + plan.slice(1)) + ' <small>' + (billing.loaded ? 'giá xem ở bảng giá bên dưới' : 'đang tải giá…') + '</small>';
-    } else {
-      const usd = planObj && planObj.price != null ? ' · ' + fmtMoney(planObj) + ' / ' + intervalLabel(planObj.interval || 'month') : '';
-      $('#ourCost').innerHTML = (ours ? '≈ ' : '') + fmtN(ours) + 'đ <small>' + esc(plan + usd) + '</small>';
-    }
-    const rows = [['TTS quốc tế', intl, ''], ['Thuê người đọc', human, '']];
+    const min = c / CHARS_PER_MIN;
+    $('#audioLen').textContent = t('calc.audio', { d: humanDur(min * 60) });
+    $('#perMin').textContent = t('calc.perMin', { n: fmtN(CHARS_PER_MIN) });
+    const pm = planById('pro_month'), monthCap = planChars('pro_month');
+    let ours = null, sub = '', big;
+    if (c <= FREE_DAILY) { ours = 0; sub = t('calc.freeDaily'); }
+    else if (c <= FREE_DAILY * 30) { ours = 0; sub = t('calc.freeSpread', { n: fmtN(FREE_DAILY) }); }
+    else if (c <= monthCap) {
+      if (pm && pm.price != null && isUsd(pm)) { ours = pm.price / 100; sub = t('calc.pro', { plan: t('plan.name.pro_month') }); }
+      else sub = t('plan.name.pro_month') + ' · ' + (billing.loaded ? t('calc.seePricing') : t('pricing.loading'));
+    } else sub = t('calc.custom', { n: fmtN(monthCap) });
+    if (ours != null) big = esc(fmtUsd(ours)) + (ours ? ' <small>' + esc(t('per.month')) + '</small>' : '');
+    else big = esc(c > monthCap ? t('calc.customBig') : t('plan.name.pro_month'));
+    $('#ourCost').innerHTML = big + ' <small class="sub">' + esc(sub) + '</small>';
+    const intl = c / 1e6 * INTL_USD_PER_M, human = min * HUMAN_USD_PER_MIN;
+    const rows = [[t('calc.bar.intl'), intl, ''], [t('calc.bar.human'), human, '']];
     if (ours != null) rows.unshift(['DatTTS', ours, 'us']);
     const max = Math.max(...rows.map(r => r[1]), 1);
     $('#cmp').innerHTML = rows
-      .map(([n, v, k]) => `<div class="bar ${k}"><span>${n}</span><div class="track"><div class="fill" style="width:${Math.max(1.5, v / max * 100)}%"></div></div><span class="v">${fmtN(v)}đ</span></div>`).join('');
+      .map(([n, v, k]) => `<div class="bar ${k}"><span>${esc(n)}</span><div class="track"><div class="fill" style="width:${Math.max(1.5, v / max * 100)}%"></div></div><span class="v">${esc(fmtUsd(v))}</span></div>`).join('');
+    // Quy đổi VND tham khảo chỉ ở chế độ VI.
+    const vnd = $('#calcVnd');
+    vnd.hidden = !(I.lang === 'vi' && ours);
+    if (!vnd.hidden) vnd.textContent = t('pricing.vnd', { v: fmtVnd(vndOfUsd(ours)), per: t('per.month') });
+    $('#calcNote').textContent = t('calc.note', { intl: fmtUsd(INTL_USD_PER_M), human: fmtUsd(HUMAN_USD_PER_MIN), fx: I.fmtNum(VND_PER_USD) });
   }
   cs.addEventListener('input', calc);
   $$('[data-chars]').forEach(b => b.addEventListener('click', () => { cs.value = toSlider(+b.dataset.chars); calc(); }));
-  cs.value = toSlider(15000); calc();
+  cs.value = toSlider(15000);
 
   // ---------- bảng giá + mua gói qua Polar ----------
-  const PLAN_LABEL = { personal: 'Cá nhân', unlimited: 'Không giới hạn' };
-  const buyMsg = $('#buyMsg');
-  function setBuyMsg(text, kind) { buyMsg.className = 'buy-msg' + (kind ? ' ' + kind : ''); buyMsg.textContent = text || ''; }
+  let cycle = store.get('cycle', 'month');
+  if (!CYCLES.includes(cycle)) cycle = 'month';
+  $$('input[name="cycle"]').forEach(r => {
+    r.checked = r.value === cycle;
+    r.addEventListener('change', () => { if (!r.checked) return; cycle = r.value; store.set('cycle', cycle); setBuyMsg(''); renderPlans(); });
+  });
+  const buyMsg = $('#buyMsg'), buyBtn = $('#buyPro');
+  let buyMsgKey = null, buyMsgKind = '';
+  function setBuyMsg(text, kind, key) { buyMsgKey = key || null; buyMsgKind = kind || ''; buyMsg.className = 'buy-msg' + (kind ? ' ' + kind : ''); buyMsg.textContent = text || ''; }
+  const planAvailable = p => !!p && p.available !== false;
   function renderPlans() {
-    $$('.plan[data-plan-id]').forEach(card => {
-      const id = card.dataset.planId; if (id === 'free') return;
-      const p = planById(id), priceEl = $('[data-price]', card), vndEl = $('[data-vnd]', card), q = $('[data-quota]', card);
-      if (p && p.price != null) {
-        const per = intervalLabel(p.interval);
-        priceEl.innerHTML = esc(fmtMoney(p)) + (per ? ' <small>/ ' + per + '</small>' : '');
-        const v = toVnd(p);
-        vndEl.hidden = v == null;
-        if (v != null) vndEl.textContent = '≈ ' + fmtN(v) + 'đ' + (per ? ' / ' + per : '') + ' · quy đổi tham khảo';
-      } else {
-        priceEl.innerHTML = '<span class="price-ph">' + (!billing.loaded ? 'Đang tải giá…' : billing.enabled ? 'Giá hiện ở bước thanh toán' : 'Sắp mở bán') + '</span>';
-        vndEl.hidden = true;
-      }
-      if (q && p && p.monthly_chars) q.textContent = (id === 'unlimited' ? 'Dùng hợp lý tới ' : '') + fmtN(p.monthly_chars) + ' ký tự mỗi tháng';
-      const btn = $('[data-buy]', card), lbl = $('.lbl', btn);
-      if (!btn.classList.contains('busy')) {
-        // Chưa biết billing bật hay tắt → nút trung tính, bấm không làm gì (không rơi về danh sách chờ).
-        lbl.textContent = !billing.loaded ? 'Đang tải…' : billing.enabled ? 'Mua gói ' + PLAN_LABEL[id] : 'Sắp mở bán · Giữ chỗ';
-        btn.setAttribute('aria-label', !billing.loaded ? `Gói ${PLAN_LABEL[id]}: đang tải thông tin gói` : billing.enabled ? `Mua gói ${PLAN_LABEL[id]}, chuyển sang trang thanh toán của Polar` : `Gói ${PLAN_LABEL[id]} sắp mở bán, giữ chỗ trong danh sách chờ`);
-        if (!billing.loaded || buying) btn.setAttribute('aria-disabled', 'true'); else btn.removeAttribute('aria-disabled');
-      }
+    const id = PLAN_OF[cycle], p = planById(id);
+    const card = $('.plan[data-plan-id="pro"]');
+    $('#freePrice').textContent = I.fmtMoney(0, 'usd', 0);
+    $('#freeQuota').textContent = t('plan.quota.day', { n: fmtN(FREE_DAILY) });
+    // nhãn trên nút chọn chu kỳ
+    CYCLES.forEach(c => {
+      const pc = planById(PLAN_OF[c]), badge = $(`[data-cycle-badge="${c}"]`);
+      const save = pc && pc.save_percent > 0 ? pc.save_percent : 0;
+      badge.hidden = !save; badge.textContent = save ? t('badge.saveShort', { p: save }) : '';
+      const input = $(`input[name="cycle"][value="${c}"]`);
+      const off = billing.loaded && billing.enabled && pc != null && !planAvailable(pc);
+      input.closest('label').classList.toggle('off', off);
     });
-    const unl = planById('unlimited');
-    if (unl && unl.monthly_chars) $('#plansNote').innerHTML = `“Không giới hạn” nghĩa là dùng hợp lý: tối đa ${fmtN(unl.monthly_chars)} ký tự mỗi tháng cho một key, đủ cho hầu hết người làm nội dung. Cần nhiều hơn, hãy viết cho <a href="mailto:support@dattts.com">support@dattts.com</a>.`;
+    const popular = $('#proPopular'), saveTag = $('#proSave');
+    popular.hidden = !(p && p.popular); popular.textContent = t('badge.popular');
+    saveTag.hidden = !(p && p.save_percent > 0); saveTag.textContent = p && p.save_percent > 0 ? t('badge.save', { p: p.save_percent }) : '';
+    card.classList.toggle('hot', !!(p && p.popular) || !p);
+    const priceEl = $('[data-price]', card), vndEl = $('[data-vnd]', card), billed = $('#proBilled');
+    const per = t('per.' + cycle);
+    if (p && p.price != null) {
+      priceEl.innerHTML = esc(fmtMoney(p)) + ' <small>' + esc(per) + '</small>';
+      if (cycle === 'year') billed.textContent = t('pricing.yearlyEq', { m: I.fmtMoney(Math.round(p.price / 12), p.currency || 'usd', 2) });
+      else billed.textContent = t('pricing.billed.' + cycle);
+      billed.hidden = false;
+      const showVnd = I.lang === 'vi' && isUsd(p);
+      vndEl.hidden = !showVnd;
+      if (showVnd) vndEl.textContent = t('pricing.vnd', { v: fmtVnd(vndOfUsd(p.price / 100)), per });
+    } else {
+      priceEl.innerHTML = '<span class="price-ph">' + esc(!billing.loaded ? t('pricing.loading') : billing.enabled ? t('pricing.atCheckout') : t('pricing.soon')) + '</span>';
+      vndEl.hidden = true; billed.hidden = true;
+    }
+    $('#proQuota').textContent = t('plan.quota.' + planPeriod(id), { n: fmtN(planChars(id)) });
+    buyBtn.dataset.buy = id;
+    buyBtn.dataset.plan = id;
+    const lbl = $('.lbl', buyBtn), name = t('plan.name.' + id);
+    if (!buyBtn.classList.contains('busy')) {
+      // Chưa biết billing bật hay tắt → nút trung tính, bấm không làm gì (không rơi về danh sách chờ).
+      const avail = !billing.enabled || p == null || planAvailable(p);
+      lbl.textContent = !billing.loaded ? t('pricing.loadingBtn') : !billing.enabled ? t('pricing.soonBtn') : avail ? t('pricing.getPro') : t('pricing.unavailable');
+      buyBtn.setAttribute('aria-label', !billing.loaded ? t('pricing.aria.loading', { plan: name }) : !billing.enabled ? t('pricing.aria.soon', { plan: name }) : avail ? t('pricing.aria.buy', { plan: name }) : t('pricing.unavailable'));
+      if (!billing.loaded || buying || !avail) buyBtn.setAttribute('aria-disabled', 'true'); else buyBtn.removeAttribute('aria-disabled');
+    }
     $('#waitlist').hidden = !billing.loaded || billing.enabled;
-    $('#bang-gia').classList.toggle('billing-on', billing.enabled);
-    if (billing.loaded && !billing.enabled) $('#pricingLead').textContent = 'Gói miễn phí dùng được ngay trong phòng thu, không cần đăng ký. Gói trả phí sắp mở bán qua Polar (thẻ quốc tế, Apple Pay, Google Pay) — để lại email để được báo khi mở.';
+    $('#pricing').classList.toggle('billing-on', billing.enabled);
+    $('#pricingLead').textContent = billing.loaded && !billing.enabled ? t('pricing.leadSoon') : t('pricing.lead');
+    if (buyMsgKey) buyMsg.textContent = t(buyMsgKey);
+    if (!billing.enabled && !$('#waitlist').hidden && wlPlan && !wlTouched) { wlPlan.value = id; }
+    calc();
   }
   let plansReq = null; // gộp các lần gọi trùng nhau
   function loadPlans() {
@@ -874,40 +963,42 @@
     plansReq = (async () => {
       try {
         const d = await api('/api/billing/plans', { key: '' });
-        billing = { enabled: !!d.enabled, loaded: true, plans: Array.isArray(d.plans) ? d.plans : [] };
+        billing = { enabled: !!d.enabled, loaded: true, currency: d.currency || 'usd', plans: Array.isArray(d.plans) ? d.plans : [] };
       } catch (e) {
         billing = { enabled: false, loaded: true, plans: [] };
       }
-      renderPlans(); calc();
+      renderPlans();
     })().finally(() => { plansReq = null; });
     return plansReq;
   }
   const safeRedirect = u => { try { const x = new URL(u, location.href); return /^https?:$/.test(x.protocol) ? x.href : null; } catch (e) { return null; } };
-  // Chỉ một phiên thanh toán được tạo mỗi lúc: khoá MỌI nút mua cho tới khi xong/lỗi.
+  // Chỉ một phiên thanh toán được tạo mỗi lúc: khoá nút mua + chu kỳ cho tới khi xong/lỗi.
   function lockBuy(on) {
     buying = on;
-    $$('[data-buy]').forEach(b => { b.disabled = on; if (on) b.setAttribute('aria-disabled', 'true'); else b.removeAttribute('aria-disabled'); });
+    buyBtn.disabled = on; if (on) buyBtn.setAttribute('aria-disabled', 'true'); else buyBtn.removeAttribute('aria-disabled');
+    $$('input[name="cycle"]').forEach(r => { r.disabled = on; });
   }
-  async function buy(plan, btn) {
-    if (buying || btn.classList.contains('busy')) return;
-    const lbl = $('.lbl', btn), old = lbl.textContent;
+  async function buy(plan) {
+    if (buying || buyBtn.classList.contains('busy')) return;
+    const lbl = $('.lbl', buyBtn);
     lockBuy(true);
-    btn.classList.add('busy'); btn.setAttribute('aria-busy', 'true');
-    lbl.textContent = 'Đang mở trang thanh toán…'; setBuyMsg('');
+    buyBtn.classList.add('busy'); buyBtn.setAttribute('aria-busy', 'true');
+    lbl.textContent = t('buy.opening'); setBuyMsg('');
     let leaving = false;
     try {
       const r = await api('/api/billing/checkout', { method: 'POST', body: { plan }, key: '' });
       const url = safeRedirect(r && r.url);
-      if (!url) throw new ApiError('Chưa tạo được phiên thanh toán. Thử lại sau ít phút nhé.', 'bad_response', 200);
+      if (!url) throw new ApiError(t('err.checkout'), 'bad_response', 200);
       leaving = true;
-      setBuyMsg('Đang chuyển sang trang thanh toán an toàn của Polar…', 'ok');
+      setBuyMsg(t('buy.redirect'), 'ok', 'buy.redirect');
       location.href = url;
     } catch (e) {
-      if (e.code === 'billing_disabled') { billing.enabled = false; renderPlans(); setBuyMsg('Gói trả phí tạm thời chưa mở bán. Bạn có thể để lại email trong danh sách chờ bên dưới.', 'err'); }
-      else setBuyMsg(e.code === 'network' ? 'Không kết nối được máy chủ để tạo phiên thanh toán. Kiểm tra mạng rồi thử lại.' : e.message, 'err');
+      if (e.code === 'billing_disabled') { billing.enabled = false; setBuyMsg(t('buy.disabled'), 'err', 'buy.disabled'); }
+      else if (e.code === 'network') setBuyMsg(t('buy.network'), 'err', 'buy.network');
+      else setBuyMsg(e.message, 'err');
     } finally {
       // Khi đang chuyển trang thì giữ nút bận; nếu người dùng bấm Back (bfcache) thì mở lại nút.
-      const reset = () => { btn.classList.remove('busy'); btn.removeAttribute('aria-busy'); lbl.textContent = old; lockBuy(false); renderPlans(); };
+      const reset = () => { buyBtn.classList.remove('busy'); buyBtn.removeAttribute('aria-busy'); lockBuy(false); renderPlans(); };
       if (!leaving) reset(); else addEventListener('pageshow', ev => { if (ev.persisted) { reset(); setBuyMsg(''); } }, { once: true });
     }
   }
@@ -917,19 +1008,21 @@
   const keyDlg = $('#keyDlg'), keyInput = $('#keyInput'), keyMsg = $('#keyMsg'), keySave = $('#keySave');
   function setKeyMsg(text, kind) { keyMsg.className = 'wl-msg' + (kind ? ' ' + kind : ''); keyMsg.textContent = text || ''; }
   function maskKey(k) { k = String(k); return k.length <= 12 ? k.slice(0, 4) + '…' : k.slice(0, 10) + '…' + k.slice(-4); }
+  const planName = info => (info && I.has('plan.name.' + info.plan) ? t('plan.name.' + info.plan) : (info && (info.plan_name || info.plan)) || '');
   function renderAcct() {
-    $('#keyBtnLabel').textContent = apiKey ? 'Đổi API key' : 'Nhập API key';
+    $('#keyBtnLabel').textContent = apiKey ? t('key.btnChange') : t('key.btnEnter');
     const bar = $('#acctBar'); bar.hidden = !apiKey;
     if (!apiKey) return;
     const badge = $('#planBadge'), usage = $('#acctUsage'), portal = $('#portalBtn');
     if (!me) {
-      badge.textContent = 'Key ' + maskKey(apiKey); badge.className = 'plan-badge';
-      usage.textContent = 'Chưa kiểm tra được gói của key này.'; portal.hidden = true; return;
+      badge.textContent = t('acct.key', { k: maskKey(apiKey) }); badge.className = 'plan-badge';
+      usage.textContent = t('acct.unknown'); portal.hidden = true; return;
     }
-    badge.textContent = 'Gói ' + (me.plan_name || PLAN_LABEL[me.plan] || me.plan); badge.className = 'plan-badge on';
+    badge.textContent = planName(me); badge.className = 'plan-badge on';
+    const period = quotaPeriod(me);
     let u;
-    if (me.limit == null) u = `Không giới hạn ký tự${me.used != null ? ' · tháng này đã dùng ' + fmtN(me.used) + ' ký tự' : ''}`;
-    else u = `Tháng này đã dùng ${fmtN(me.used || 0)} / ${fmtN(me.limit)} ký tự` + (me.reset_at ? ` · làm mới ${fmtDate(me.reset_at)}` : '');
+    if (me.limit == null) u = t('acct.unlimited') + (me.used != null ? ' · ' + t('acct.usedOnly.' + period, { n: fmtN(me.used) }) : '');
+    else u = t('acct.used.' + period, { used: fmtN(me.used || 0), limit: fmtN(me.limit) }) + (me.reset_at ? ' · ' + t('acct.resets', { d: fmtDate(me.reset_at) }) : '');
     if (me.email) u += ' · ' + me.email;
     usage.textContent = u;
     portal.hidden = me.plan === 'internal';
@@ -939,7 +1032,7 @@
   }
   function onInvalidKey() {
     apiKey = ''; me = null; store.del('apikey'); renderAcct();
-    showAlert(INVALID_KEY_MSG);
+    showAlert(t('err.keyRemoved'));
     loadQuota(); updateCount();
   }
   async function loadMe() {
@@ -963,25 +1056,25 @@
   $('#keyForm').addEventListener('submit', async e => {
     e.preventDefault();
     const k = keyInput.value.replace(/\s+/g, '');
-    if (!k) { keyInput.setAttribute('aria-invalid', 'true'); setKeyMsg('Hãy dán API key vào ô trên.', 'err'); keyInput.focus(); return; }
-    keySave.classList.add('busy'); keySave.disabled = true; setKeyMsg('Đang kiểm tra key…');
+    if (!k) { keyInput.setAttribute('aria-invalid', 'true'); setKeyMsg(t('key.empty'), 'err'); keyInput.focus(); return; }
+    keySave.classList.add('busy'); keySave.disabled = true; setKeyMsg(t('key.checking'));
     try {
       const info = await api('/api/me', { key: k });
       setKey(k, info); closeKeyDlg(); hideAlert();
-      toast('Đã lưu key · gói ' + (info.plan_name || PLAN_LABEL[info.plan] || info.plan));
+      toast(t('key.saved', { plan: planName(info) }));
       loadQuota(); updateCount();
     } catch (err) {
       keyInput.setAttribute('aria-invalid', String(err.code === 'invalid_api_key'));
       setKeyMsg(err.code === 'invalid_api_key' ? err.message
-        : err.code === 'network' ? 'Chưa kiểm tra được key vì không kết nối được máy chủ. Thử lại sau ít phút.'
-        : 'Chưa kiểm tra được key: ' + err.message, 'err');
+        : err.code === 'network' ? t('key.netErr')
+        : t('key.checkErr', { m: err.message }), 'err');
       keyInput.focus();
     } finally { keySave.classList.remove('busy'); keySave.disabled = false; }
   });
   $('#logoutKey').onclick = () => {
     apiKey = ''; me = null; store.del('apikey'); renderAcct();
     loadQuota(); updateCount();
-    toast('Đã gỡ API key khỏi trình duyệt này. Bạn đang dùng lượt miễn phí.');
+    toast(t('key.removed'));
     $('#keyBtn').focus();
   };
   $('#portalBtn').onclick = async () => {
@@ -991,7 +1084,7 @@
     try {
       const r = await api('/api/billing/portal', { method: 'POST' });
       const url = safeRedirect(r && r.url);
-      if (!url) throw new ApiError('Chưa mở được cổng khách hàng. Thử lại sau ít phút nhé.', 'bad_response', 200);
+      if (!url) throw new ApiError(t('err.portal'), 'bad_response', 200);
       leaving = true; location.href = url;
     } catch (e) { showAlert(e.message); }
     finally {
@@ -1001,42 +1094,46 @@
   };
 
   // ---------- danh sách chờ ----------
-  const PLAN_NAMES = { 'ca-nhan': 'Cá nhân', 'khong-gioi-han': 'Không giới hạn', 'doanh-nghiep': 'Doanh nghiệp' };
   const wl = $('#waitlist'), wlEmail = $('#wlEmail'), wlPlan = $('#wlPlan'), wlMsg = $('#wlMsg'), wlBtn = $('#wlBtn');
-  function markPlan() { $$('[data-plan]').forEach(b => b.closest('.plan').classList.toggle('picked', b.dataset.plan === wlPlan.value)); }
-  $$('[data-plan]').forEach(b => b.addEventListener('click', () => {
-    if (b.dataset.buy && (!billing.loaded || buying)) return; // chưa biết billing bật/tắt, hoặc đang tạo phiên
-    if (billing.enabled && b.dataset.buy) { buy(b.dataset.buy, b); return; }
-    wlPlan.value = b.dataset.plan; markPlan();
+  let wlTouched = false, wlDone = null;
+  const wlPlanName = v => (I.has('wl.opt.' + v.replace(/^pro_/, '')) ? t('wl.opt.' + v.replace(/^pro_/, '')) : v);
+  buyBtn.addEventListener('click', () => {
+    if (!billing.loaded || buying || buyBtn.getAttribute('aria-disabled') === 'true') return; // chưa biết billing bật/tắt, đang tạo phiên, hoặc gói không bán
+    if (billing.enabled) { buy(buyBtn.dataset.buy); return; }
+    wlPlan.value = buyBtn.dataset.buy;
     wl.scrollIntoView({ block: 'center', behavior: reduceMotion.matches ? 'auto' : 'smooth' });
     wlEmail.focus({ preventScroll: true });
-  }));
-  wlPlan.addEventListener('change', markPlan);
+  });
+  wlPlan.addEventListener('change', () => { wlTouched = true; });
   wlEmail.addEventListener('input', () => wlEmail.removeAttribute('aria-invalid'));
+  function renderWlDone() {
+    if (!wlDone) return;
+    wlMsg.textContent = t('wl.ok', { n: fmtN(wlDone.position), plan: wlPlanName(wlDone.plan), email: wlDone.email });
+  }
   wl.addEventListener('submit', async e => {
     e.preventDefault();
     const email = wlEmail.value.trim();
-    wlMsg.className = 'wl-msg';
+    wlMsg.className = 'wl-msg'; wlDone = null;
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(email)) {
       wlEmail.setAttribute('aria-invalid', 'true'); wlMsg.classList.add('err');
-      wlMsg.textContent = 'Email chưa đúng, ví dụ: ten@gmail.com'; wlEmail.focus(); return;
+      wlMsg.textContent = t('wl.badEmail'); wlEmail.focus(); return;
     }
     wlBtn.classList.add('busy'); wlBtn.disabled = true;
     try {
       const r = await api('/api/waitlist', { method: 'POST', body: { email, plan: wlPlan.value } });
       wlMsg.classList.add('ok');
-      wlMsg.textContent = `Đã giữ chỗ! Bạn là người thứ ${fmtN(r.position)} trong danh sách chờ gói ${PLAN_NAMES[wlPlan.value] || wlPlan.value}. Chúng tôi sẽ báo qua ${email} khi gói mở.`;
-      store.set('waitlist', { email, plan: wlPlan.value, position: r.position });
+      wlDone = { email, plan: wlPlan.value, position: r.position }; renderWlDone();
+      store.set('waitlist', wlDone);
     } catch (err) {
       wlMsg.classList.add('err');
-      wlMsg.textContent = err.code === 'network' ? 'Chưa gửi được vì không kết nối được máy chủ. Thử lại sau ít phút nhé.' : err.message;
+      wlMsg.textContent = err.code === 'network' ? t('wl.netErr') : err.message;
     } finally { wlBtn.classList.remove('busy'); wlBtn.disabled = false; }
   });
 
   // ---------- API mẫu ----------
   $('#copyCurl').onclick = async () => {
-    const t = $('#curl code').innerText.split('\n\n')[0];
-    try { await navigator.clipboard.writeText(t); toast('Đã chép lệnh curl.'); } catch (e) { toast('Không chép được, hãy bôi đen và chép thủ công.'); }
+    const s = $('#curl code').innerText.split('\n\n')[0];
+    try { await navigator.clipboard.writeText(s); toast(t('api.copied')); } catch (e) { toast(t('api.copyFail')); }
   };
   if (/^https?:/.test(location.protocol) && !/dattts\.com$/.test(location.hostname)) {
     const base = API || location.origin;
@@ -1052,6 +1149,7 @@
     setBusy(false);
     updateCount();
   }
+  let voicesErr = null;
   async function goOnline() {
     const wasOffline = document.body.classList.contains('offline');
     online = true;
@@ -1060,14 +1158,14 @@
     stopSpeech();
     setBusy(false);
     if (!voices.length) {
-      try { await loadVoices(); }
-      catch (e) { $('#vgrid').innerHTML = `<p class="note warn">Chưa tải được danh sách giọng: ${esc(e.message)}</p>`; }
+      try { await loadVoices(); voicesErr = null; }
+      catch (e) { voicesErr = e.message; $('#vgrid').innerHTML = `<p class="note warn">${esc(t('voices.loadErr', { m: e.message }))}</p>`; }
     }
     loadQuota();
     if (apiKey) loadMe();
     if (!billing.enabled) loadPlans();
     updateCount();
-    if (wasOffline) toast('Đã kết nối lại máy chủ DatTTS.');
+    if (wasOffline) toast(t('offline.back'));
   }
   async function checkHealth(silent) {
     const ctl = 'AbortController' in window ? new AbortController() : null;
@@ -1079,19 +1177,36 @@
     } catch (e) { if (!silent || online) goOffline(); }
     finally { clearTimeout(timer); }
   }
+  let retrying = false;
   $('#retryBtn').onclick = async () => {
-    const b = $('#retryBtn'); b.disabled = true; b.textContent = 'Đang thử…';
+    const b = $('#retryBtn'); b.disabled = true; retrying = true; b.textContent = t('offline.retrying');
     await checkHealth();
-    b.disabled = false; b.textContent = 'Thử kết nối lại';
-    if (!online) toast('Vẫn chưa kết nối được máy chủ.');
+    b.disabled = false; retrying = false; b.textContent = t('offline.retry');
+    if (!online) toast(t('offline.still'));
   };
+
+  // ---------- đổi ngôn ngữ tại chỗ: vẽ lại mọi phần sinh động ----------
+  function relocalize() {
+    setRec(recKey, studio.classList.contains('live') ? 'live' : studio.classList.contains('ready') ? 'ready' : '');
+    if (!busy) genLabel.textContent = online ? t('gen.label') : t('gen.preview'); else genLabel.textContent = t(busyKey);
+    if (retrying) $('#retryBtn').textContent = t('offline.retrying');
+    setPlayLabel(); syncRate(); updateTime();
+    if (quota) setQuota(quota);
+    if (voices.length) { renderInsertOptions(); renderVoices(); renderCurrentVoice(); }
+    else if (voicesErr) $('#vgrid').innerHTML = `<p class="note warn">${esc(t('voices.loadErr', { m: voicesErr }))}</p>`;
+    loadBrowserVoices();
+    renderDict(); renderHistory(); renderTones(); renderPlans(); renderAcct(); renderWlDone();
+    renderPlayerHead(); renderDownloads();
+    updateCount();
+  }
+  document.addEventListener('dattts:lang', relocalize);
 
   // ---------- khởi động ----------
   readAccent(); sizeCanvas(); drawOnce();
-  syncRate(); renderDict(); renderHistory(); markPlan(); renderAcct();
+  syncRate(); renderDict(); renderHistory(); renderTones(); renderAcct(); setRec('rec.connecting', ''); setPlayLabel();
   const wlSaved = store.get('waitlist', null);
   if (wlSaved && wlSaved.email) { wlEmail.value = wlSaved.email; }
   updateCount();
-  if (location.protocol === 'file:' && !API) { goOffline(); billing.loaded = true; renderPlans(); calc(); }
+  if (location.protocol === 'file:' && !API) { goOffline(); billing.loaded = true; renderPlans(); }
   else { renderPlans(); loadPlans(); checkHealth(); } // bảng giá tải song song, không chờ health/giọng
 })();

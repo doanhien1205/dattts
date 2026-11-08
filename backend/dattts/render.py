@@ -14,6 +14,7 @@ import numpy as np
 
 from . import audio
 from .engine import DEFAULT_VOICE_ID, voice_id_from_name
+from .messages import LocalizedError
 from .textproc import _TAG as _VOICE_TAG
 from .textproc import (
     apply_builtin_rules,
@@ -52,15 +53,11 @@ GAPS = {"clause": 0.12, "sentence": 0.3, "paragraph": 0.6, "voice_change": 0.6}
 EMPTY_GAP = 0.05  # câu không tạo ra âm thanh → chỉ chèn khoảng lặng nhỏ
 
 
-class RenderError(Exception):
-    def __init__(self, code: str, message: str, status: int = 400):
-        super().__init__(message)
-        self.code = code
-        self.message = message
-        self.status = status
+class RenderError(LocalizedError):
+    """Lỗi dựng giọng: ``code`` + khoá thông điệp song ngữ (``messages.py``) + HTTP status.
 
-    def to_dict(self) -> dict:
-        return {"code": self.code, "message": self.message}
+    ``RenderError(code, status=…, key=…, params=…)``; ``.message`` là bản tiếng Anh.
+    """
 
 
 @dataclass
@@ -95,34 +92,32 @@ def request_key(req: RenderRequest, engine_name: str) -> str:
 
 
 def validate(req: RenderRequest) -> None:
-    """Kiểm tra request; lỗi → RenderError với thông báo tiếng Việt."""
+    """Kiểm tra request; lỗi → RenderError (thông điệp song ngữ, xem messages.py)."""
     if not isinstance(req.text, str) or not clean_text(req.text):
-        raise RenderError("empty_text", "Bạn chưa nhập văn bản cần đọc.", 400)
+        raise RenderError("empty_text", status=400)
     try:
         speed = float(req.speed)
     except (TypeError, ValueError):
         speed = float("nan")
     if not (SPEED_MIN <= speed <= SPEED_MAX):
-        raise RenderError("bad_speed", "Tốc độ đọc phải nằm trong khoảng 0,7× đến 1,5×.", 400)
+        raise RenderError("bad_speed", status=400)
     if (req.format or "").lower() not in FORMATS:
-        raise RenderError("bad_format", "Định dạng không hỗ trợ. Hãy chọn MP3, WAV hoặc OGG.", 400)
+        raise RenderError("bad_format", status=400)
     d = req.dictionary or []
     if not isinstance(d, list) or len(d) > DICT_MAX_ENTRIES:
-        raise RenderError("bad_dictionary", f"Từ điển phát âm tối đa {DICT_MAX_ENTRIES} mục.", 400)
+        raise RenderError("bad_dictionary", status=400, key="bad_dictionary.max_entries",
+                          params={"max": DICT_MAX_ENTRIES})
     for e in d:
         if not isinstance(e, dict) or not isinstance(e.get("from", ""), str) or not isinstance(e.get("to", ""), str):
-            raise RenderError("bad_dictionary", "Mỗi mục từ điển cần có “from” và “to” dạng chữ.", 400)
+            raise RenderError("bad_dictionary", status=400)
         if len(e.get("from", "")) > DICT_MAX_LEN or len(e.get("to", "")) > DICT_MAX_LEN:
-            raise RenderError("bad_dictionary", f"Mỗi vế trong từ điển tối đa {DICT_MAX_LEN} ký tự.", 400)
+            raise RenderError("bad_dictionary", status=400, key="bad_dictionary.max_len",
+                              params={"max": DICT_MAX_LEN})
 
 
 def _unknown_voice(name: str, voices: list[dict]) -> RenderError:
     sample = ", ".join(v["name"] for v in voices[:6])
-    return RenderError(
-        "unknown_voice",
-        f"Không tìm thấy giọng “{name}”. Bạn có thể dùng, ví dụ: {sample}.",
-        400,
-    )
+    return RenderError("unknown_voice", status=400, params={"name": name, "examples": sample})
 
 
 def resolve_voice(name: str | None, voices: list[dict], default: str = DEFAULT_VOICE_ID) -> str:
@@ -133,7 +128,7 @@ def resolve_voice(name: str | None, voices: list[dict], default: str = DEFAULT_V
             return default
         if voices:
             return voices[0]["id"]
-        raise RenderError("unknown_voice", "Chưa có giọng đọc nào khả dụng.", 500)
+        raise RenderError("unknown_voice", status=500, key="unknown_voice.none_available")
     vid = voice_id_from_name(name)
     if vid in ids:
         return vid
@@ -212,9 +207,9 @@ def plan(req: RenderRequest, engine) -> list[dict]:
                 "gap_after": GAPS[kind],
             })
     if not items:
-        raise RenderError("empty_text", "Bạn chưa nhập văn bản cần đọc.", 400)
+        raise RenderError("empty_text", status=400)
     if not any(_SPEAKABLE.search(it["spoken"]) for it in items):
-        raise RenderError("empty_audio", "Văn bản chỉ có dấu câu, không có chữ hay số nào để đọc.", 422)
+        raise RenderError("empty_audio", status=422)
     items[-1]["gap_after"] = 0.0
     return items
 
@@ -291,8 +286,7 @@ def render_to_file(req: RenderRequest, engine, out_path: str,
                 except RenderError:
                     raise
                 except Exception as e:  # lỗi engine → lỗi máy chủ có thông báo thân thiện
-                    raise RenderError("engine_error",
-                                      "Máy đọc gặp sự cố khi tạo giọng. Bạn thử lại sau ít phút nhé.", 500) from e
+                    raise RenderError("engine_error", status=500) from e
                 w = np.asarray(w, dtype=np.float32).reshape(-1)
                 if trim and w.size:
                     # Engine tự đệm ~0,2 s lặng quanh mỗi câu → cắt để khoảng nghỉ đúng như GAPS.
@@ -326,8 +320,7 @@ def render_to_file(req: RenderRequest, engine, out_path: str,
                 progress(i + 1, total)
         spool.close()
         if not segments or spool.samples == 0:
-            raise RenderError("empty_audio",
-                              "Không tạo được âm thanh từ văn bản này. Bạn thử viết lại câu nhé.", 422)
+            raise RenderError("empty_audio", status=422, key="empty_audio.no_output")
         fmt = req.format.lower()
         audio.encode_file(spool.path, sr, fmt, out_path)
         duration = round(spool.samples / sr, 3)

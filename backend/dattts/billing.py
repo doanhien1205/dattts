@@ -1,11 +1,14 @@
-"""Thanh toán qua Polar (polar.sh, Merchant of Record) — SPEC Phần 2.
+"""Thanh toán qua Polar (polar.sh, Merchant of Record) — SPEC Phần 2 + Phần 3 (gói Pro tuần/tháng/năm).
 
 - ``PolarClient``: gọi Polar API bằng httpx (timeout 10 s, ``Authorization: Bearer <token>``);
   tiêm được ``transport`` (ví dụ ``httpx.MockTransport``) để test không cần mạng.
 - ``verify_webhook``: chữ ký Standard Webhooks, chấp nhận cả bí mật kiểu mới lẫn kiểu cũ của Polar.
 - ``resolve_api_key``: API key của khách = License Key Polar. Kết quả xác thực được cache trong KV
   theo ``sha256(key)`` — KHÔNG bao giờ lưu hay ghi log key gốc.
-- ``Billing``: gom cấu hình + store + client cho API (bảng giá, checkout, quota tháng, webhook).
+- ``Billing``: gom cấu hình + store + client cho API (bảng giá, checkout, quota theo kỳ, webhook).
+- Quota trả phí theo kỳ của gói: pro_week → ``usage:<lk_id>:<ISO-YEAR>-W<ww>`` (tuần ISO giờ VN, reset
+  thứ Hai 00:00 UTC+7); pro_month/pro_year → ``usage:<lk_id>:<YYYY-MM>``.
+- Lỗi là ``BillingError`` (``LocalizedError``): thông điệp song ngữ lấy từ ``messages.py``.
 """
 
 from __future__ import annotations
@@ -24,6 +27,9 @@ from typing import Any, Callable, Mapping
 
 import httpx
 
+from .messages import DEFAULT_LANG, LocalizedError, plan_name
+from .settings import PAID_PLANS, PLAN_PERIODS
+
 log = logging.getLogger("dattts.billing")
 
 __all__ = [
@@ -37,21 +43,25 @@ __all__ = [
     "mask_email",
     "month_id",
     "month_reset_at",
+    "week_id",
+    "week_reset_at",
+    "period_id",
+    "period_reset_at",
+    "save_percent",
     "PAID_PLANS",
-    "PLAN_NAMES",
+    "PLAN_PERIODS",
+    "PLAN_INTERVALS",
     "CHECKOUT_ID_RE",
     "LICENSE_KEY_RE",
 ]
 
 VN_TZ = timezone(timedelta(hours=7), "Asia/Ho_Chi_Minh")
 
-PAID_PLANS = ("personal", "unlimited")
-PLAN_NAMES = {
-    "free": "Dùng thử",
-    "personal": "Cá nhân",
-    "unlimited": "Không giới hạn",
-    "internal": "Nội bộ",
-}
+# Chu kỳ thanh toán mặc định của từng gói (dùng khi Polar không trả recurring_interval)
+PLAN_INTERVALS = {"pro_week": "week", "pro_month": "month", "pro_year": "year"}
+# "Save X%": gói → (gói tham chiếu, số kỳ tham chiếu trong một chu kỳ của gói)
+SAVE_REFERENCE = {"pro_month": ("pro_week", 4), "pro_year": ("pro_month", 12)}
+POPULAR_PLAN = "pro_month"
 # License key Polar của DatTTS: tiền tố "DATTTS-" + chữ/số/gạch nối. Sai dạng → 401 ngay, không gọi Polar.
 LICENSE_KEY_RE = re.compile(r"^DATTTS-[A-Za-z0-9-]{1,120}$", re.IGNORECASE)
 CHECKOUT_ID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
@@ -73,19 +83,17 @@ INVALIDATING_EVENTS = frozenset({
     "customer.state_changed",
 })
 
-MSG_UNAVAILABLE = "Hệ thống thanh toán đang tạm gián đoạn. Bạn thử lại sau ít phút nhé."
-MSG_DISABLED = "Gói trả phí sắp mở bán. Bạn để lại email ở bảng giá để được báo sớm nhé."
-MSG_KEY_RATE = "Bạn thử quá nhiều API key trong thời gian ngắn. Bạn đợi một phút rồi thử lại nhé."
-MSG_BAD_EMAIL = ("Hệ thống thanh toán không nhận email này (có thể tên miền gõ nhầm). Bạn kiểm tra lại email "
-                 "hoặc để trống — Polar sẽ hỏi email ở trang thanh toán.")
-MSG_INVALID_KEY = ("API key không hợp lệ hoặc gói đã hết hạn. Bạn kiểm tra lại key trong email của Polar "
-                   "hoặc trong cổng quản lý gói nhé.")
+
+class BillingError(LocalizedError):
+    """Lỗi thanh toán/key: ``BillingError(code, status=…, key=…, params=…)`` — thông điệp trong messages.py."""
 
 
-class BillingError(Exception):
-    def __init__(self, code: str, message: str, status: int = 400):
-        super().__init__(message)
-        self.code, self.message, self.status = code, message, status
+def _unavailable() -> BillingError:
+    return BillingError("billing_unavailable", status=503)
+
+
+def _invalid_key() -> BillingError:
+    return BillingError("invalid_api_key", status=401)
 
 
 class PolarError(Exception):
@@ -127,8 +135,41 @@ def month_reset_at(now: float | None = None) -> datetime:
     return datetime(y, m, 1, tzinfo=VN_TZ)
 
 
-def _fmt_n(n: int) -> str:
-    return f"{int(n):,}".replace(",", ".")
+def week_id(now: float | None = None) -> str:
+    """Tuần ISO theo giờ VN: ``2026-W45`` (năm ISO, có thể khác năm dương lịch quanh 1/1)."""
+    y, w, _ = _now_vn(now).isocalendar()
+    return f"{y}-W{w:02d}"
+
+
+def week_reset_at(now: float | None = None) -> datetime:
+    """Thứ Hai kế tiếp, 00:00 giờ VN."""
+    d = _now_vn(now)
+    start = datetime(d.year, d.month, d.day, tzinfo=VN_TZ) - timedelta(days=d.weekday())
+    return start + timedelta(days=7)
+
+
+def period_id(period: str, now: float | None = None) -> str:
+    return week_id(now) if period == "week" else month_id(now)
+
+
+def period_reset_at(period: str, now: float | None = None) -> datetime:
+    return week_reset_at(now) if period == "week" else month_reset_at(now)
+
+
+def save_percent(price: int | None, ref_price: int | None, ref_count: int) -> int | None:
+    """Phần trăm tiết kiệm so với mua ``ref_count`` kỳ của gói tham chiếu, làm tròn tới số nguyên gần nhất
+    (0,5 làm tròn lên). Không đủ dữ liệu hoặc không rẻ hơn → None.
+
+    4,99 so với 4 × 1,99 → 37 (37,31 %); 49,99 so với 12 × 4,99 → 17 (16,52 %).
+    """
+    if price is None or ref_price is None or ref_count <= 0:
+        return None
+    full = int(ref_price) * int(ref_count)
+    if full <= 0 or price >= full:
+        return None
+    # Số học nguyên (không lỗi làm tròn số thực): round_half_up(100 * (full - price) / full)
+    pct = (200 * (full - int(price)) + full) // (2 * full)
+    return int(pct) if pct > 0 else None
 
 
 def _header(headers: Any, name: str) -> str:
@@ -233,7 +274,7 @@ class PolarClient:
             raise PolarError(f"lỗi mạng khi gọi Polar {method} {path.split('?')[0]}: {type(e).__name__}") from None
         if r.status_code in ok_statuses:
             return r
-        raise PolarError(f"Polar trả {r.status_code} cho {method} {path}", r.status_code)
+        raise PolarError(f"Polar trả {r.status_code} cho {method} {path.split('?')[0]}", r.status_code)
 
     @staticmethod
     def _json(r: httpx.Response) -> dict:
@@ -285,12 +326,8 @@ class PolarClient:
 
 
 def _benefit_plans(settings) -> dict[str, str]:
-    out = {}
-    if settings.polar_benefit_personal:
-        out[settings.polar_benefit_personal] = "personal"
-    if settings.polar_benefit_unlimited:
-        out[settings.polar_benefit_unlimited] = "unlimited"
-    return out
+    """benefit_id → gói (chỉ các gói có benefit được cấu hình)."""
+    return {b: plan for plan in PAID_PLANS if (b := settings.polar_benefit(plan))}
 
 
 def _is_internal(key: str, settings) -> bool:
@@ -372,12 +409,12 @@ def resolve_api_key(key: str, settings, store, client: PolarClient | None, now: 
     """
     key = (key or "").strip()
     if not key:
-        raise BillingError("invalid_api_key", MSG_INVALID_KEY, 401)
+        raise _invalid_key()
     if _is_internal(key, settings):
         return {"kind": "internal"}
     if not settings.billing_enabled or client is None or not LICENSE_KEY_RE.fullmatch(key):
         # Không đúng dạng key Polar của DatTTS → từ chối ngay: không gọi Polar, không ghi cache.
-        raise BillingError("invalid_api_key", MSG_INVALID_KEY, 401)
+        raise _invalid_key()
     t = time.time() if now is None else now
     h = key_hash(key)
     ck = f"lk:{h}"
@@ -398,11 +435,11 @@ def resolve_api_key(key: str, settings, store, client: PolarClient | None, now: 
         log.warning("không xác thực được license key %s…: %s", h[:12], e)
         if stale_ok:
             return _cached_result(cached)
-        raise BillingError("billing_unavailable", MSG_UNAVAILABLE, 503) from None
+        raise _unavailable() from None
     info = _info_from_validated(v, settings) if v is not None else None
     if info is None:
         store.kv_set(ck, {"ok": False, "at": t, "exp": t + LK_NEGATIVE_TTL})
-        raise BillingError("invalid_api_key", MSG_INVALID_KEY, 401)
+        raise _invalid_key()
     store.kv_set(ck, {"ok": True, "info": info, "at": t, "exp": t + LK_POSITIVE_TTL})
     try:
         _index_customer(store, info["customer_id"], h)
@@ -414,7 +451,7 @@ def resolve_api_key(key: str, settings, store, client: PolarClient | None, now: 
 def _cached_result(cached: dict) -> dict:
     if cached.get("ok") and isinstance(cached.get("info"), dict):
         return dict(cached["info"])
-    raise BillingError("invalid_api_key", MSG_INVALID_KEY, 401)
+    raise _invalid_key()
 
 
 def invalidate_customer(store, customer_id: str) -> int:
@@ -455,119 +492,132 @@ class Billing:
 
     def require_enabled(self) -> None:
         if not self.enabled:
-            raise BillingError("billing_disabled", MSG_DISABLED, 503)
+            raise BillingError("billing_disabled", status=503)
 
     # ---------- gói ----------
-    def monthly_limit(self, plan: str) -> int:
-        if plan == "unlimited":
-            return int(self.settings.plan_unlimited_monthly_chars)
-        return int(self.settings.plan_personal_monthly_chars)
+    def plan_limit(self, plan: str) -> int:
+        """Hạn mức ký tự trong một kỳ (``plan_period``) của gói."""
+        return self.settings.plan_chars(plan)
+
+    @staticmethod
+    def plan_period(plan: str) -> str:
+        return PLAN_PERIODS.get(plan, "month")
 
     def product_id(self, plan: str) -> str | None:
-        return {"personal": self.settings.polar_product_personal,
-                "unlimited": self.settings.polar_product_unlimited}.get(plan)
+        return self.settings.polar_product(plan)
 
-    def _price(self, product_id: str | None) -> dict:
-        empty = {"price": None, "currency": "usd", "interval": "month"}
-        if not product_id or not self.enabled:
+    def _price(self, plan: str) -> dict:
+        default_interval = PLAN_INTERVALS.get(plan)
+        empty = {"price": None, "currency": "usd", "interval": default_interval, "interval_count": 1}
+        product_id = self.product_id(plan)
+        if not product_id or not self.enabled or not self.settings.polar_plan_configured(plan):
             return empty
         p = self.client.get_product(product_id)
         if p.get("is_archived"):
             return empty
         for pr in p.get("prices") or []:
-            if pr.get("is_archived") or pr.get("amount_type") != "fixed":
+            if not isinstance(pr, dict) or pr.get("is_archived") or pr.get("amount_type") != "fixed":
                 continue
-            # Polar hiện đặt chu kỳ ở cấp SẢN PHẨM (Product.recurring_interval); trường cùng tên trên
-            # giá chỉ còn ở schema Legacy* → dùng làm dự phòng.
+            # Polar đặt chu kỳ ở cấp SẢN PHẨM (Product.recurring_interval); trường cùng tên trên giá chỉ còn
+            # ở schema Legacy* → dự phòng; không có cả hai → chu kỳ mặc định của gói.
             return {"price": int(pr.get("price_amount") or 0),
                     "currency": str(pr.get("price_currency") or "usd").lower(),
-                    "interval": p.get("recurring_interval") or pr.get("recurring_interval") or None,
+                    "interval": p.get("recurring_interval") or pr.get("recurring_interval") or default_interval,
                     "interval_count": int(p.get("recurring_interval_count") or 1)}
         return empty
 
-    def plans(self, now: float | None = None) -> dict:
+    def _plans_data(self, now: float | None = None) -> dict:
         t = time.time() if now is None else now
         with self._lock:
             c = self._plans_cache
             if c and t < c["exp"]:
-                return json.loads(json.dumps(c["data"]))
+                return c["data"]
         failed = False
-        paid = []
+        paid: dict[str, dict] = {}
         for plan in PAID_PLANS:
             try:
-                price = self._price(self.product_id(plan))
+                price = self._price(plan)
             except PolarError as e:
                 log.warning("không lấy được giá gói %s: %s", plan, e)
                 failed = True
-                price = {"price": None, "currency": "usd", "interval": "month"}
-            limit = self.monthly_limit(plan)
-            paid.append({"id": plan, "name": PLAN_NAMES[plan], **price, "monthly_chars": limit,
-                         "chars": f"{_fmt_n(limit)}/tháng",
-                         "available": bool(self.enabled and self.settings.polar_plan_configured(plan))})
-        data = {
-            "enabled": self.enabled,
-            "plans": [{"id": "free", "name": PLAN_NAMES["free"], "price": 0, "currency": "usd", "interval": None,
-                       "chars": f"{_fmt_n(self.settings.free_daily_chars)}/ngày",
-                       "daily_chars": int(self.settings.free_daily_chars)}] + paid,
-        }
+                price = {"price": None, "currency": "usd", "interval": PLAN_INTERVALS.get(plan),
+                         "interval_count": 1}
+            paid[plan] = {"id": plan, **price, "chars": self.plan_limit(plan), "period": self.plan_period(plan),
+                          "available": bool(self.enabled and self.settings.polar_plan_configured(plan)),
+                          "popular": plan == POPULAR_PLAN, "save_percent": None}
+        for plan, (ref, count) in SAVE_REFERENCE.items():
+            cur, base = paid.get(plan), paid.get(ref)
+            if cur and base and cur["currency"] == base["currency"]:
+                cur["save_percent"] = save_percent(cur["price"], base["price"], count)
+        free = {"id": "free", "price": 0, "currency": "usd", "interval": None, "interval_count": None,
+                "chars": int(self.settings.free_daily_chars), "period": "day", "available": True,
+                "popular": False, "save_percent": None}
+        data = {"enabled": self.enabled, "currency": "usd", "plans": [free] + [paid[p] for p in PAID_PLANS]}
         with self._lock:
             self._plans_cache = {"data": data, "exp": t + (PLANS_ERROR_TTL if failed else PLANS_TTL)}
-        return json.loads(json.dumps(data))
+        return data
+
+    def plans(self, lang: str = DEFAULT_LANG, now: float | None = None) -> dict:
+        """Bảng giá (giá thật từ Polar, cache 10 phút; lỗi → ``price: null``). ``name`` theo ngôn ngữ."""
+        data = json.loads(json.dumps(self._plans_data(now)))
+        for p in data["plans"]:
+            p["name"] = plan_name(p["id"], lang)
+        return data
 
     # ---------- checkout ----------
     def create_checkout(self, plan: str, email: str | None = None) -> str:
         self.require_enabled()
         if plan not in PAID_PLANS:
-            raise BillingError("bad_plan", "Gói không hợp lệ. Hãy chọn gói Cá nhân hoặc Không giới hạn.", 400)
+            raise BillingError("bad_plan", status=400)
         product = self.product_id(plan)
         if not product or not self.settings.polar_plan_configured(plan):
-            raise BillingError("billing_disabled", "Gói này chưa mở bán. Bạn quay lại sau nhé.", 503)
+            raise BillingError("billing_disabled", status=503, key="billing_disabled.plan")
         base = self.settings.public_base
         try:
             co = self.client.create_checkout(
                 product,
-                success_url=base + "/thanh-toan.html?checkout_id={CHECKOUT_ID}",
-                return_url=base + "/#bang-gia",
+                success_url=base + "/checkout-success.html?checkout_id={CHECKOUT_ID}",
+                return_url=base + "/#pricing",
                 metadata={"plan": plan},
                 customer_email=email or None,
             )
         except PolarError as e:
             if e.status == 422 and email:  # Polar kiểm email kỹ hơn (tên miền nhận được thư…)
-                raise BillingError("bad_email", MSG_BAD_EMAIL, 400) from None
+                raise BillingError("bad_email", status=400, key="bad_email.polar") from None
             log.warning("tạo checkout lỗi: %s", e)
-            raise BillingError("billing_unavailable", MSG_UNAVAILABLE, 503) from None
+            raise _unavailable() from None
         url = co.get("url")
         if not url:
-            raise BillingError("billing_unavailable", MSG_UNAVAILABLE, 503)
+            raise _unavailable()
         return str(url)
 
     def checkout_status(self, checkout_id: str) -> dict:
         self.require_enabled()
         if not CHECKOUT_ID_RE.fullmatch(checkout_id or ""):
-            raise BillingError("bad_checkout_id", "Mã thanh toán không hợp lệ.", 400)
+            raise BillingError("bad_checkout_id", status=400)
         try:
             co = self.client.get_checkout(checkout_id)
         except PolarError as e:
             if e.status in (404, 422):
-                raise BillingError("checkout_not_found", "Không tìm thấy phiên thanh toán này.", 404) from None
+                raise BillingError("checkout_not_found", status=404) from None
             log.warning("đọc checkout lỗi: %s", e)
-            raise BillingError("billing_unavailable", MSG_UNAVAILABLE, 503) from None
-        plan = (co.get("metadata") or {}).get("plan")
+            raise _unavailable() from None
+        plan = (co.get("metadata") or {}).get("plan") if isinstance(co.get("metadata"), dict) else None
         if plan not in PAID_PLANS:
-            plan = {self.settings.polar_product_personal: "personal",
-                    self.settings.polar_product_unlimited: "unlimited"}.get(co.get("product_id"))
+            by_product = {self.product_id(p): p for p in PAID_PLANS if self.product_id(p)}
+            plan = by_product.get(co.get("product_id"))
         return {"status": co.get("status") or "open", "plan": plan,
                 "email": mask_email(co.get("customer_email"))}
 
     def portal_url(self, who: dict) -> str:
         self.require_enabled()
         if not who or who.get("kind") != "polar" or not who.get("customer_id"):
-            raise BillingError("not_polar_key", "Chỉ API key mua qua Polar mới có cổng quản lý gói.", 400)
+            raise BillingError("not_polar_key", status=400)
         try:
             return self.client.create_customer_session(who["customer_id"], self.settings.public_base)
         except PolarError as e:
             log.warning("tạo customer session lỗi: %s", e)
-            raise BillingError("billing_unavailable", MSG_UNAVAILABLE, 503) from None
+            raise _unavailable() from None
 
     # ---------- key ----------
     def resolve_api_key(self, key: str, now: float | None = None,
@@ -575,43 +625,40 @@ class Billing:
         return resolve_api_key(key, self.settings, self.store, self.client if self.enabled else None, now,
                                on_miss=on_miss)
 
-    # ---------- quota tháng ----------
+    # ---------- quota theo kỳ (tuần ISO / tháng, giờ VN) ----------
     @staticmethod
-    def usage_key(license_key_id: str, month: str | None = None) -> str:
-        return f"usage:{license_key_id}:{month or month_id()}"
+    def usage_key(license_key_id: str, bucket: str | None = None) -> str:
+        return f"usage:{license_key_id}:{bucket or month_id()}"
 
     def usage(self, who: dict, now: float | None = None) -> dict:
-        m = month_id(now)
-        used = int(self.store.kv_get(self.usage_key(who["license_key_id"], m)) or 0)
-        limit = self.monthly_limit(who["plan"])
+        period = self.plan_period(who["plan"])
+        used = int(self.store.kv_get(self.usage_key(who["license_key_id"], period_id(period, now))) or 0)
+        limit = self.plan_limit(who["plan"])
         return {"used": used, "limit": limit, "remaining": max(0, limit - used),
-                "reset_at": month_reset_at(now).isoformat(), "plan": who["plan"], "period": "month"}
+                "reset_at": period_reset_at(period, now).isoformat(), "plan": who["plan"], "period": period}
 
     def charge(self, who: dict, chars: int, now: float | None = None) -> str:
-        """Trừ hạn mức tháng của key Polar; vượt → 429. Trả khoá KV đã trừ (để hoàn khi lỗi)."""
-        m = month_id(now)
-        uk = self.usage_key(who["license_key_id"], m)
-        limit = self.monthly_limit(who["plan"])
+        """Trừ hạn mức kỳ hiện tại của key Polar; vượt → 429. Trả khoá KV đã trừ (để hoàn khi lỗi)."""
+        period = self.plan_period(who["plan"])
+        bucket = period_id(period, now)
+        uk = self.usage_key(who["license_key_id"], bucket)
+        limit = self.plan_limit(who["plan"])
         new = self.store.kv_incr(uk, chars)
         if new > limit:
             self.store.kv_incr(uk, -chars)
             remaining = max(0, limit - (new - chars))
-            reset = month_reset_at(now).strftime("%d/%m/%Y")
-            name = PLAN_NAMES.get(who["plan"], who["plan"])
+            params = {"plan": who["plan"], "limit": limit, "period": period,
+                      "reset": period_reset_at(period, now).isoformat()}
             if remaining <= 0:
-                msg = (f"Gói {name} đã dùng hết {_fmt_n(limit)} ký tự của tháng này. "
-                       f"Hạn mức sẽ làm mới vào ngày {reset}.")
-            else:
-                msg = (f"Gói {name} chỉ còn {_fmt_n(remaining)} ký tự trong tháng này (hạn mức "
-                       f"{_fmt_n(limit)} ký tự/tháng), văn bản này có {_fmt_n(chars)} ký tự. "
-                       f"Hạn mức sẽ làm mới vào ngày {reset}.")
-            raise BillingError("quota_exceeded", msg, 429)
-        self._track_month_key(m, who)
+                raise BillingError("quota_exceeded", status=429, key="quota_exceeded.paid_used_up", params=params)
+            raise BillingError("quota_exceeded", status=429, key="quota_exceeded.paid_partial",
+                               params={**params, "remaining": remaining, "chars": int(chars)})
+        self._track_usage_key(bucket, who)
         return uk
 
-    def _track_month_key(self, month: str, who: dict) -> None:
-        """Chỉ mục ``usage_keys:<YYYY-MM>`` → {license_key_id: plan} để admin cộng tổng theo gói."""
-        ik = f"usage_keys:{month}"
+    def _track_usage_key(self, bucket: str, who: dict) -> None:
+        """Chỉ mục ``usage_keys:<kỳ>`` → {license_key_id: plan} để admin cộng tổng theo gói."""
+        ik = f"usage_keys:{bucket}"
         lkid, plan = who["license_key_id"], who["plan"]
         try:
             cur = self.store.kv_get(ik) or {}
@@ -628,9 +675,9 @@ class Billing:
     def handle_webhook(self, body: bytes, headers) -> dict:
         secret = self.settings.polar_webhook_secret
         if not secret:
-            raise BillingError("billing_disabled", MSG_DISABLED, 503)
+            raise BillingError("billing_disabled", status=503)
         if not verify_webhook(body, headers, secret):
-            raise BillingError("bad_signature", "Chữ ký webhook không hợp lệ.", 403)
+            raise BillingError("bad_signature", status=403)
         wid = _header(headers, "webhook-id")[:200]
         if self.store.kv_incr(f"wh:{wid}", 1) > 1:
             return {"ok": True, "duplicate": True}
@@ -670,14 +717,16 @@ class Billing:
 
     # ---------- admin ----------
     def admin_summary(self, now: float | None = None) -> dict:
-        m = month_id(now)
-        index = self.store.kv_get(f"usage_keys:{m}") or {}
+        """Tổng ký tự đã dùng theo gói trong kỳ hiện tại (tuần này cho pro_week, tháng này cho gói còn lại)."""
+        m, w = month_id(now), week_id(now)
         usage = {p: 0 for p in PAID_PLANS}
         customers = {p: 0 for p in PAID_PLANS}
-        for lkid, plan in index.items():
-            n = int(self.store.kv_get(self.usage_key(lkid, m)) or 0)
-            usage[plan] = usage.get(plan, 0) + n
-            customers[plan] = customers.get(plan, 0) + 1
+        for bucket in (m, w):
+            for lkid, plan in (self.store.kv_get(f"usage_keys:{bucket}") or {}).items():
+                if plan not in usage or period_id(self.plan_period(plan), now) != bucket:
+                    continue
+                usage[plan] += int(self.store.kv_get(self.usage_key(lkid, bucket)) or 0)
+                customers[plan] += 1
         events = list(self.store.kv_get(EVENTS_KEY) or [])
         by_type: dict[str, int] = {}
         for e in events:
@@ -686,6 +735,7 @@ class Billing:
             "enabled": self.enabled,
             "server": self.settings.polar_server,
             "month": m,
+            "week": w,
             "usage_by_plan": usage,
             "keys_by_plan": customers,
             "events_total": len(events),

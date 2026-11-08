@@ -99,10 +99,13 @@ Biến môi trường (xem `backend/dattts/settings.py`):
 | `POLAR_ACCESS_TOKEN` | trống | Organization Access Token. **Để trống thì billing tắt**: web hiện "Sắp mở bán", endpoint billing trả 503 `billing_disabled`. Billing chỉ bật khi có cả token, `POLAR_ORGANIZATION_ID` và ít nhất một gói đủ sản phẩm + benefit; thiếu biến nào thì log khi khởi động ghi `Cấu hình Polar thiếu …` |
 | `POLAR_ORGANIZATION_ID` | trống | UUID tổ chức Polar. **Bắt buộc** (Polar cần khi xác thực key); thiếu thì billing tắt |
 | `POLAR_WEBHOOK_SECRET` | trống | Bí mật webhook `whsec_...` |
-| `POLAR_PRODUCT_PERSONAL` / `POLAR_PRODUCT_UNLIMITED` | trống | UUID sản phẩm gói Cá nhân / Không giới hạn |
-| `POLAR_BENEFIT_PERSONAL` / `POLAR_BENEFIT_UNLIMITED` | trống | UUID benefit License Keys của từng gói (từ đây suy ra gói của một key). Gói thiếu sản phẩm hoặc benefit thì không bán (`available: false`) |
-| `PLAN_PERSONAL_MONTHLY_CHARS` | `1000000` | Hạn mức tháng gói Cá nhân |
-| `PLAN_UNLIMITED_MONTHLY_CHARS` | `20000000` | Hạn mức "dùng hợp lý" của gói Không giới hạn |
+| `POLAR_PRODUCT_PRO_WEEK` / `_MONTH` / `_YEAR` | trống | UUID sản phẩm gói Pro tuần / tháng / năm (ID production có sẵn trong `backend/.env.example`) |
+| `POLAR_BENEFIT_PRO_WEEK` / `_MONTH` / `_YEAR` | trống | UUID benefit License Keys của từng gói (từ đây suy ra gói của một key). Gói thiếu sản phẩm hoặc benefit thì không bán (`available: false`), các gói còn lại vẫn bán |
+| `PLAN_PRO_WEEK_CHARS` | `250000` | Hạn mức gói Pro tuần, tính theo tuần ISO giờ VN (reset thứ Hai 00:00 UTC+7) |
+| `PLAN_PRO_MONTH_CHARS` | `1000000` | Hạn mức tháng gói Pro tháng |
+| `PLAN_PRO_YEAR_MONTHLY_CHARS` | `1000000` | Hạn mức **mỗi tháng** của gói Pro năm |
+
+Mẫu đầy đủ (không có bí mật): `backend/.env.example`. Thông báo lỗi của API có hai thứ tiếng: header `Accept-Language` bắt đầu bằng `vi` → tiếng Việt, còn lại → tiếng Anh (mặc định). Bảng thông điệp nằm ở `backend/dattts/messages.py`.
 
 Trên máy 4 CPU, mô hình nạp trong khoảng 3–6 giây. Tốc độ tạo nhanh hơn thời gian thực khoảng 1,5–2,5 lần: đoạn 180 ký tự mất khoảng 7 giây, còn một job 3.300 ký tự (khoảng 3 phút âm thanh) mất khoảng 75 giây.
 
@@ -151,9 +154,9 @@ PYTHON=$PWD/.venv/bin/python DATTTS_MODEL_DIR=$PWD/models node scripts/e2e_billi
 Script tự bật Polar giả (cổng 8899) và `server_local.py` (cổng 8765) với dữ liệu tạm, nên hai cổng này phải đang trống. Nó chạy ba giai đoạn rồi tự tắt máy chủ:
 
 1. **Billing bật, engine giả.** Kiểm tra:
-   - bảng giá hiện $2.99 và $9.99 lấy từ Polar;
-   - bấm "Mua gói" sang trang thanh toán giả, rồi quay về `thanh-toan.html` báo thành công;
-   - dán key vừa cấp, phòng thu hiện "Gói Cá nhân" và hạn mức 1.000.000;
+   - bảng giá hiện $1.99 / $4.99 / $49.99 lấy từ Polar (giả);
+   - bấm "Get Pro" sang trang thanh toán giả, rồi quay về `checkout-success.html` báo thành công;
+   - dán key vừa cấp, phòng thu hiện gói Pro và hạn mức 1,000,000;
    - tạo giọng trừ vào hạn mức tháng, còn quota IP miễn phí giữ nguyên;
    - "Quản lý gói" mở cổng khách hàng;
    - key đã thu hồi bị báo lỗi và gỡ khỏi trình duyệt;
@@ -248,42 +251,34 @@ Polar chuyển tiền qua **Stripe Connect Express**. Stripe Connect Express h�
 
 Ở sandbox, bạn chỉ cần bước này nếu muốn thử luồng nhận tiền. Thanh toán thử vẫn chạy khi chưa có tài khoản nhận tiền.
 
-### Bước 3. Tạo hai sản phẩm theo tháng
+### Bước 3. Ba sản phẩm Pro (tuần / tháng / năm)
 
-Vào **Products → New product** và tạo hai sản phẩm, đều là **Subscription** thu theo tháng (**Monthly**), giá cố định bằng USD:
+Ở production, ba sản phẩm đã được tạo sẵn, đều là **Subscription**, giá cố định bằng USD, cùng tính năng (25 giọng, MP3/WAV/OGG, SRT/VTT, nhiều giọng, API, dùng thương mại), chỉ khác chu kỳ:
 
-| Sản phẩm | Giá đề xuất | Biến môi trường |
-|---|---|---|
-| DatTTS Cá nhân (1.000.000 ký tự/tháng) | **$2.99 / tháng** | `POLAR_PRODUCT_PERSONAL` |
-| DatTTS Không giới hạn (dùng hợp lý, tối đa 20.000.000 ký tự/tháng) | **$9.99 / tháng** | `POLAR_PRODUCT_UNLIMITED` |
-
-Copy **Product ID** (UUID) của từng sản phẩm. DatTTS đọc giá trực tiếp từ Polar, nên khi bạn đổi giá trên Polar, bảng giá trên web cũng tự đổi theo (cache 10 phút).
-
-**Vì sao chọn $2.99 mà không chọn $1.99?** Phí của Polar là 5% + 50¢ mỗi giao dịch, cộng khoảng 1,5% cho thẻ phát hành ngoài Mỹ (gần như mọi thẻ của khách Việt Nam). Khoản 50¢ cố định khiến gói rẻ bị mất phí rất nặng:
-
-| Giá | Phí ước tính | Tỷ lệ phí | Bạn nhận |
+| Gói (plan id) | Giá | Hạn mức | Biến môi trường (sản phẩm / benefit) |
 |---|---|---|---|
-| $1.99 | 0,10 + 0,50 + 0,03 ≈ $0.63 | **≈ 32%** | ≈ $1.36 |
-| $2.99 | 0,15 + 0,50 + 0,04 ≈ $0.69 | **≈ 23%** | ≈ $2.30 |
-| $9.99 | 0,50 + 0,50 + 0,15 ≈ $1.15 | ≈ 11,5% | ≈ $8.84 |
+| `pro_week` | **$1.99 / tuần** | 250,000 ký tự / tuần | `POLAR_PRODUCT_PRO_WEEK` / `POLAR_BENEFIT_PRO_WEEK` |
+| `pro_month` — "Most popular" | **$4.99 / tháng** | 1,000,000 ký tự / tháng | `POLAR_PRODUCT_PRO_MONTH` / `POLAR_BENEFIT_PRO_MONTH` |
+| `pro_year` | **$49.99 / năm** | 1,000,000 ký tự / tháng | `POLAR_PRODUCT_PRO_YEAR` / `POLAR_BENEFIT_PRO_YEAR` |
 
-Con số trên chưa gồm phí đổi ngoại tệ khi chuyển tiền về VND. Với $2.99, bạn nhận thêm khoảng 70% mỗi khách so với $1.99, trong khi giá vẫn dưới 80.000đ.
+UUID thật nằm trong `backend/.env.example`. DatTTS đọc giá và chu kỳ (`recurring_interval` của sản phẩm) trực tiếp từ Polar, nên khi bạn đổi giá trên Polar, bảng giá trên web cũng tự đổi theo (cache 10 phút). Nhãn "Save X%" cũng tính từ giá thật (làm tròn tới số nguyên gần nhất): gói tháng so với 4 × giá tuần (hiện **37%**), gói năm so với 12 × giá tháng (hiện **17%**, chính xác là 16,5%).
 
-**Gói năm (nên thêm sau):** bán gói năm giúp khoản 50¢ chỉ bị tính một lần mỗi năm. Ví dụ $29/năm cho gói Cá nhân (phí ≈ 8%) và $99/năm cho gói Không giới hạn (phí ≈ 7%), tức khách được tặng khoảng 2 tháng. Trên Polar, gói năm là các sản phẩm riêng. Chỉ cần gắn **cùng benefit License Keys** của gói tương ứng (bước 4), key mua theo năm sẽ được DatTTS nhận đúng gói ngay. Riêng nút mua trên web hiện mới tạo checkout cho sản phẩm tháng (xem TODO).
+Phí Polar là 5% + 50¢ mỗi giao dịch, cộng khoảng 1,5% cho thẻ phát hành ngoài Mỹ, nên gói tuần $1.99 mất khoảng 30% phí mỗi lần gia hạn; gói tháng và đặc biệt gói năm (50¢ chỉ tính một lần mỗi năm) có lợi hơn nhiều cho bạn — đó là lý do gói tháng được gắn "Most popular".
 
 ### Bước 4. Gắn benefit License Keys (đây chính là API key)
 
 Làm cho từng sản phẩm. Mở sản phẩm, vào **Benefits → New benefit → License Keys**:
 
-- **Description:** ví dụ "API key DatTTS — gói Cá nhân".
+- **Description:** ví dụ "API key DatTTS — Pro (monthly)".
 - **Prefix:** `DATTTS`
 - **Expiration:** không đặt. Key tự bị thu hồi khi gói kết thúc.
-- **Activation limit / Usage limit:** để trống. DatTTS tự đếm ký tự theo tháng.
+- **Activation limit / Usage limit:** để trống. DatTTS tự đếm ký tự theo tuần/tháng.
 
 Lưu lại, gắn benefit vào sản phẩm, rồi copy **Benefit ID**:
 
-- benefit của gói Cá nhân là `POLAR_BENEFIT_PERSONAL`;
-- benefit của gói Không giới hạn là `POLAR_BENEFIT_UNLIMITED`.
+- benefit của gói Pro tuần là `POLAR_BENEFIT_PRO_WEEK`;
+- benefit của gói Pro tháng là `POLAR_BENEFIT_PRO_MONTH`;
+- benefit của gói Pro năm là `POLAR_BENEFIT_PRO_YEAR`.
 
 Mỗi gói phải có **benefit riêng**, vì DatTTS dựa vào `benefit_id` của key để biết khách đang dùng gói nào. Key thuộc benefit lạ sẽ bị coi là không hợp lệ.
 
@@ -328,12 +323,15 @@ modal secret create dattts --force \
   POLAR_ACCESS_TOKEN=polar_oat_xxxxxxxxxxxxxxxxxxxxxxxx \
   POLAR_ORGANIZATION_ID=<uuid-tổ-chức> \
   POLAR_WEBHOOK_SECRET=whsec_xxxxxxxxxxxxxxxxxxxxxxxx \
-  POLAR_PRODUCT_PERSONAL=<uuid-sản-phẩm-Cá-nhân> \
-  POLAR_PRODUCT_UNLIMITED=<uuid-sản-phẩm-Không-giới-hạn> \
-  POLAR_BENEFIT_PERSONAL=<uuid-benefit-Cá-nhân> \
-  POLAR_BENEFIT_UNLIMITED=<uuid-benefit-Không-giới-hạn> \
-  PLAN_PERSONAL_MONTHLY_CHARS=1000000 \
-  PLAN_UNLIMITED_MONTHLY_CHARS=20000000
+  POLAR_PRODUCT_PRO_WEEK=<uuid-sản-phẩm-Pro-tuần> \
+  POLAR_BENEFIT_PRO_WEEK=<uuid-benefit-Pro-tuần> \
+  POLAR_PRODUCT_PRO_MONTH=<uuid-sản-phẩm-Pro-tháng> \
+  POLAR_BENEFIT_PRO_MONTH=<uuid-benefit-Pro-tháng> \
+  POLAR_PRODUCT_PRO_YEAR=<uuid-sản-phẩm-Pro-năm> \
+  POLAR_BENEFIT_PRO_YEAR=<uuid-benefit-Pro-năm> \
+  PLAN_PRO_WEEK_CHARS=250000 \
+  PLAN_PRO_MONTH_CHARS=1000000 \
+  PLAN_PRO_YEAR_MONTHLY_CHARS=1000000
 
 modal deploy backend/modal_app.py      # secret chỉ có hiệu lực ở container mới, nên phải deploy lại
 ```
@@ -341,18 +339,25 @@ modal deploy backend/modal_app.py      # secret chỉ có hiệu lực ở conta
 Kiểm tra lại cấu hình:
 
 ```bash
-curl -s https://dattts.com/api/billing/plans          # "enabled": true, "price": 299 và 999
+curl -s https://dattts.com/api/billing/plans          # "enabled": true, giá 199 / 499 / 4999, save_percent 37 / 17
 curl -s -H "Authorization: Bearer $ADMIN_TOKEN" https://dattts.com/api/admin/billing
 ```
 
 Nếu `price` là `null`, nghĩa là token thiếu scope `products:read`, UUID sản phẩm bị sai, hoặc đang trộn sandbox với production.
 
+Kiểm tra nhanh cấu hình Polar thật từ máy bạn (chỉ đọc sản phẩm và thử một key giả; thêm `--checkout` để tạo **một** phiên thanh toán chưa trả tiền, tự hết hạn):
+
+```bash
+set -a; . ./polar.env; set +a          # file KEY=VALUE chứa POLAR_* (đừng commit)
+.venv/bin/python scripts/polar_smoke.py [--checkout]
+```
+
 ### Bước 8. Thử ở sandbox
 
-1. Mở `https://dattts.com/#bang-gia` và bấm **Mua gói Cá nhân**.
+1. Mở `https://dattts.com/#pricing`, chọn **Monthly** và bấm **Get Pro**.
 2. Ở trang thanh toán của Polar sandbox, dùng thẻ thử của Stripe: **4242 4242 4242 4242**, ngày hết hạn bất kỳ trong tương lai (ví dụ 12/34), CVC bất kỳ (ví dụ 123), và một email thật của bạn để nhận key.
-3. Polar chuyển về `https://dattts.com/thanh-toan.html?checkout_id=...`. Trang này phải chuyển sang **"Thanh toán thành công!"** trong vài giây.
-4. Mở email từ Polar và copy key `DATTTS-...`. Dán key vào ô trên trang cảm ơn, hoặc dùng nút **Nhập API key** trong phòng thu. Phòng thu phải hiện **Gói Cá nhân** và dòng **"Tháng này đã dùng 0 / 1.000.000 ký tự"**.
+3. Polar chuyển về `https://dattts.com/checkout-success.html?checkout_id=...`. Trang này phải báo thanh toán thành công trong vài giây.
+4. Mở email từ Polar và copy key `DATTTS-...`. Dán key vào ô trên trang cảm ơn, hoặc dùng nút nhập API key trong phòng thu. Phòng thu phải hiện gói **Pro Monthly** và hạn mức **0 / 1,000,000** ký tự tháng này.
 5. Tạo thử một đoạn. Số ký tự đã dùng trong tháng phải tăng lên, còn lượt miễn phí theo IP giữ nguyên.
 6. Bấm **Quản lý gói** và kiểm tra rằng cổng khách hàng Polar mở ra. Lưu ý: khách tự huỷ trong cổng chỉ có hiệu lực **cuối kỳ** (`cancel_at_period_end`, chỉ có `subscription.canceled`), key vẫn dùng được tới hết kỳ. Để thử thu hồi ngay, vào dashboard Polar sandbox → **Customers** (hoặc **Subscriptions**) → chọn subscription → **Revoke**. Sau đó kiểm tra ở **Settings → Webhooks → Deliveries** rằng `subscription.revoked` và `benefit_grant.revoked` được nhận với mã 202, và key bị từ chối (401, phòng thu báo key hết hiệu lực và gỡ key).
 7. Trong Polar, vào **Settings → Webhooks → Deliveries**. Mọi lần gửi phải có mã 202.
@@ -361,7 +366,7 @@ Nếu cần thử nhiều lần, có thể đặt giá $0 hoặc tạo mã giả
 
 ### Bước 9. Chuyển sang production
 
-1. Đăng nhập <https://polar.sh> (production) và **làm lại bước 1–6** ở đây: tổ chức, tài khoản nhận tiền, 2 sản phẩm, 2 benefit License Keys, token và webhook. Mọi UUID, token và secret đều khác bản sandbox.
+1. Đăng nhập <https://polar.sh> (production) và **làm lại bước 1–6** ở đây: tổ chức, tài khoản nhận tiền, 3 sản phẩm, 3 benefit License Keys, token và webhook. Mọi UUID, token và secret đều khác bản sandbox (UUID production của tổ chức "Dat TTS" đã có trong `backend/.env.example`).
 2. Gửi tài khoản cho Polar duyệt và chờ được duyệt.
 3. Chạy lại `modal secret create dattts --force ...` như bước 7, đổi thành `POLAR_SERVER=production` và điền các giá trị production. **Không** đặt `POLAR_API_BASE`.
 4. Chạy `modal deploy backend/modal_app.py`, kiểm tra `/api/billing/plans`, rồi tự mua thử một gói bằng thẻ thật và hoàn tiền cho chính mình trong Polar.
@@ -374,7 +379,8 @@ Muốn tạm dừng bán, chỉ cần bỏ `POLAR_ACCESS_TOKEN` khỏi secret r�
 
 - trang thanh toán giả và cổng khách hàng giả;
 - một nút để gửi webhook đã ký đúng;
-- sẵn ba key thử: `DATTTS-PERSONAL-TEST` (gói Cá nhân), `DATTTS-UNLIMITED-TEST` (gói Không giới hạn) và `DATTTS-REVOKED-TEST` (đã bị thu hồi).
+- sẵn các key thử: `DATTTS-PRO-WEEK-TEST`, `DATTTS-PRO-MONTH-TEST`, `DATTTS-PRO-YEAR-TEST` (Pro tuần / tháng / năm) và `DATTTS-REVOKED-TEST` (đã bị thu hồi);
+- giá giống Polar thật: $1.99 / tuần, $4.99 / tháng, $49.99 / năm.
 
 ```bash
 . .venv/bin/activate
@@ -383,13 +389,13 @@ eval "$(python scripts/fake_polar.py --print-env)"            # đặt POLAR_* t
 cd backend && PUBLIC_BASE_URL=http://127.0.0.1:8765 python server_local.py --fake --port 8765
 ```
 
-Sau đó mở <http://127.0.0.1:8765/#bang-gia> và bấm **Mua gói Cá nhân**. Trên trang Polar giả, bấm **Thanh toán**. Key mới cấp nằm ở <http://127.0.0.1:8899/_fake/outbox>.
+Sau đó mở <http://127.0.0.1:8765/#pricing> và bấm **Get Pro**. Trên trang Polar giả, bấm **Thanh toán**. Key mới cấp nằm ở <http://127.0.0.1:8899/_fake/outbox>.
 
 Để gửi thử một webhook, ví dụ huỷ gói và thu hồi key:
 
 ```bash
 curl -s -X POST http://127.0.0.1:8899/_fake/webhook -H 'Content-Type: application/json' \
-  -d '{"type":"subscription.revoked","key":"DATTTS-PERSONAL-TEST","revoke":true}'
+  -d '{"type":"subscription.revoked","key":"DATTTS-PRO-MONTH-TEST","revoke":true}'
 ```
 
 Các endpoint khác của bản giả:
@@ -428,7 +434,6 @@ Dùng cách này khi gói Modal của bạn chưa có custom domain, hoặc bạ
 - **Điền tên pháp lý** thay cho `[Tên chủ sở hữu / doanh nghiệp]` trong `web/dieu-khoan.html`, `web/bao-mat.html`, `web/hoan-tien.html` trước khi gửi Polar duyệt tài khoản.
 - Trang pháp lý ghi bộ đếm ký tự theo key chỉ giữ trong tháng dương lịch đang dùng, chính sách hoàn tiền xét "dưới 10% hạn mức tháng theo bộ đếm của chúng tôi", và bản băm key trong bộ đệm tối đa 24 giờ. Nếu đổi cách lưu ở backend (ví dụ lưu bộ đếm theo kỳ thanh toán Polar trên Volume), hãy cập nhật `web/bao-mat.html` và `web/hoan-tien.html`.
 
-- **Gói năm.** Key của sản phẩm năm đã được nhận đúng gói nếu gắn cùng benefit với gói tháng. Còn thiếu hai phần: biến `POLAR_PRODUCT_*_YEARLY` và nút chọn tháng/năm trên bảng giá.
 - **Bộ đếm ký tự theo tháng trên Modal.** Mục trong `modal.Dict` hết hạn sau 7 ngày không dùng, nên khách trả phí nghỉ hơn 7 ngày trong tháng có thể bị đặt lại bộ đếm (có lợi cho khách). Nếu cần chính xác, hãy sao lưu bộ đếm sang Volume giống như danh sách chờ.
 
 ## Giấy phép và ghi công
@@ -478,9 +483,9 @@ curl -s $API/api/jobs/<job_id>
 # Xem quota hôm nay
 curl -s $API/api/quota
 
-# Dùng API key trả phí (License Key Polar, bắt đầu bằng DATTTS) — trừ vào hạn mức tháng của gói
-curl -s $API/api/me -H 'X-API-Key: DATTTS-XXXXXXXX-XXXXXXXX'
-# → {"plan":"personal","plan_name":"Cá nhân","used":67,"limit":1000000,"remaining":999933,"reset_at":"2026-12-01T00:00:00+07:00","email":"a***@gmail.com"}
+# Dùng API key trả phí (License Key Polar, bắt đầu bằng DATTTS) — trừ vào hạn mức kỳ (tuần/tháng) của gói
+curl -s $API/api/me -H 'X-API-Key: DATTTS-XXXXXXXX-XXXXXXXX' -H 'Accept-Language: vi'
+# → {"plan":"pro_month","plan_name":"Pro tháng","used":67,"limit":1000000,"remaining":999933,"reset_at":"2026-12-01T00:00:00+07:00","period":"month","email":"a***@gmail.com"}
 
 # Bảng giá (giá lấy từ Polar, đơn vị cent)
 curl -s $API/api/billing/plans
@@ -513,7 +518,7 @@ Mã lỗi thường gặp:
 | `bad_speed` | Tốc độ nằm ngoài khoảng 0,7–1,5 |
 | `bad_format` | Định dạng không hỗ trợ |
 | `too_long` (413) | Văn bản quá dài cho `/api/tts`, hãy dùng `/api/jobs` |
-| `quota_exceeded` (429) | Đã hết ký tự miễn phí hôm nay, hoặc hết hạn mức tháng của gói trả phí |
+| `quota_exceeded` (429) | Đã hết ký tự miễn phí hôm nay, hoặc hết hạn mức tuần/tháng của gói Pro (thông báo nêu lúc reset) |
 | `invalid_api_key` (401) | API key không đúng hoặc gói đã hết hạn (key không có dạng `DATTTS-…` bị từ chối ngay, không hỏi Polar) |
 | `rate_limited` (429) | Một IP thử quá 20 key chưa có trong bộ đệm mỗi phút (`Retry-After: 60`), hoặc tạo quá 10 phiên thanh toán mỗi giờ |
 | `bad_email` (400) | Email sai định dạng, hoặc Polar không nhận email đó khi tạo phiên thanh toán |

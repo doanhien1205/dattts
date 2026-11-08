@@ -513,9 +513,7 @@ def run_job(store, job_id: str, req: RenderRequest, render_fn: Callable[..., dic
         final = {"status": "error", "error": e.to_dict()}
     except Exception:  # pragma: no cover - phòng hờ
         log.exception("job %s lỗi", job_id)
-        final = {"status": "error",
-                 "error": {"code": "engine_error",
-                           "message": "Máy đọc gặp sự cố khi tạo giọng. Bạn thử lại sau ít phút nhé."}}
+        final = {"status": "error", "error": RenderError("engine_error", status=500).to_dict()}
     cur = store.kv_get(k) or rec
     cur.update(final, updated_at=time.time())
     if cur["status"] == "done":

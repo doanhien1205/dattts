@@ -30,5 +30,6 @@ playwright-report/
 # Bí mật và rác hệ điều hành
 .env
 .env.*
+!.env.example
 .DS_Store
 .modal.toml

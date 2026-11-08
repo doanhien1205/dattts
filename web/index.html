@@ -1,13 +1,15 @@
 <!doctype html>
-<html lang="vi">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>DatTTS – Giọng đọc tiếng Việt tự nhiên</title>
-<meta name="description" content="DatTTS chuyển văn bản thành giọng nói tiếng Việt tự nhiên: 25 giọng Bắc, Trung, Nam, nhiều giọng trong một kịch bản, phụ đề SRT/VTT. Dùng thử miễn phí mỗi ngày, gói trả phí thanh toán an toàn qua Polar.">
-<meta property="og:title" content="DatTTS – Gõ chữ. Nghe giọng Việt đọc ngay.">
-<meta property="og:description" content="25 giọng đọc tiếng Việt, đủ sáu thanh điệu. Tải MP3, WAV, OGG kèm phụ đề.">
+<title data-i18n="meta.index.title">DatTTS – The Vietnamese voice studio</title>
+<meta name="description" data-i18n-attr="content:meta.index.desc" content="Natural Vietnamese text-to-speech: 25 voices from the North, Centre and South, multi-voice scripts, SRT/VTT subtitles and a simple API. Free every day; Pro from $1.99 a week.">
+<meta property="og:title" content="DatTTS – Natural Vietnamese voices, ready in seconds">
+<meta property="og:description" content="The Vietnamese voice studio: 25 natural voices with every tone right. Download MP3, WAV or OGG with subtitles, or use the API.">
 <meta property="og:url" content="https://dattts.com/">
+<meta property="og:type" content="website">
+<link rel="canonical" href="https://dattts.com/">
 <meta name="theme-color" content="#D63A6E">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='10' fill='%23D63A6E'/%3E%3Cpath d='M24 9v22M24 22.5a6.5 6.5 0 1 1 0-.01' stroke='%23fff' stroke-width='3.2' fill='none' stroke-linecap='round'/%3E%3Cpath d='M19 13.5h9' stroke='%23E7A422' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -17,18 +19,21 @@
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<a class="skip" href="#studio">Bỏ qua, tới phòng thu</a>
+<a class="skip" href="#studio" data-i18n="skip.studio">Skip to the studio</a>
 
 <div class="wrap">
-  <nav aria-label="Điều hướng chính">
-    <a class="logo" href="#top" aria-label="DatTTS trang chủ">
+  <nav aria-label="Main navigation" data-i18n-attr="aria-label:nav.aria">
+    <a class="logo" href="#top" aria-label="DatTTS home" data-i18n-attr="aria-label:nav.home">
       <svg viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="10" fill="var(--lotus)"/>
         <path d="M24 9v22M24 22.5a6.5 6.5 0 1 1 0-.01" stroke="#fff" stroke-width="3.2" fill="none" stroke-linecap="round"/>
         <path d="M19 13.5h9" stroke="var(--gold)" stroke-width="3" stroke-linecap="round"/></svg>
       DatTTS <small>.com</small>
     </a>
-    <div class="navlinks"><a href="#studio">Phòng thu</a><a href="#thanh-dieu">Thanh điệu</a><a href="#tinh-gia">Tính giá</a><a href="#bang-gia">Bảng giá</a><a href="#api">API</a><a href="#hoi-dap">Hỏi đáp</a></div>
-    <button class="iconbtn" id="themeBtn" type="button" aria-label="Đổi giao diện sáng/tối" title="Đổi giao diện sáng/tối">
+    <div class="navlinks"><a href="#studio" data-i18n="nav.studio">Studio</a><a href="#tones" data-i18n="nav.tones">Tones</a><a href="#calculator" data-i18n="nav.calc">Cost</a><a href="#pricing" data-i18n="nav.pricing">Pricing</a><a href="#api" data-i18n="nav.api">API</a><a href="#faq" data-i18n="nav.faq">FAQ</a></div>
+    <div class="langsw" role="group" aria-label="Language" data-i18n-attr="aria-label:lang.aria">
+      <button type="button" data-lang="en" aria-pressed="true" lang="en" aria-label="English">EN</button><button type="button" data-lang="vi" aria-pressed="false" lang="vi" aria-label="Tiếng Việt">VI</button>
+    </div>
+    <button class="iconbtn" id="themeBtn" type="button" aria-label="Switch light/dark theme" title="Switch light/dark theme" data-i18n-attr="aria-label:theme.toggle;title:theme.toggle">
       <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>
       <svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
     </button>
@@ -36,96 +41,97 @@
 
   <div class="banner" id="offlineBanner" role="status" hidden>
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 20h20L12 3zm0 6v5m0 3v.01"/></svg>
-    <div><b>Đang ở chế độ thử trên trình duyệt.</b> Chưa kết nối được máy chủ DatTTS nên trang dùng giọng có sẵn trong máy bạn để đọc thử. Giọng AI, tải file và phụ đề sẽ có lại khi máy chủ hoạt động.</div>
-    <button class="btn btn-ghost btn-sm" id="retryBtn" type="button">Thử kết nối lại</button>
+    <div data-i18n-html="offline.banner"><b>You’re in browser preview mode.</b> We can’t reach the DatTTS server right now, so this page reads with your device’s built-in voice. AI voices, downloads and subtitles come back as soon as the server does.</div>
+    <button class="btn btn-ghost btn-sm" id="retryBtn" type="button" data-i18n="offline.retry">Reconnect</button>
   </div>
 
   <header class="hero" id="top">
     <div class="hero-copy">
-      <div class="eyebrow">Văn bản → giọng nói · tiếng Việt</div>
-      <h1>Gõ chữ. Nghe <em>giọng Việt</em> đọc ngay.</h1>
-      <p class="lead">25 giọng AI Bắc, Trung, Nam đọc kịch bản, bài giảng, truyện audio của bạn, đủ sáu thanh điệu, kèm phụ đề khớp từng câu. Mỗi ngày 20.000 ký tự miễn phí, không cần đăng ký.</p>
+      <div class="eyebrow" data-i18n="hero.eyebrow">The Vietnamese voice studio</div>
+      <h1 data-i18n-html="hero.title">Natural <em>Vietnamese voices</em>, ready in seconds.</h1>
+      <p class="lead" data-i18n="hero.lead">25 AI voices from the North, Centre and South of Vietnam read your scripts, lessons and stories with every tone in place — plus subtitles synced sentence by sentence. 20,000 characters free every day, no sign-up.</p>
     </div>
 
     <section class="studio" id="studio" aria-labelledby="studioTitle">
-      <h2 class="sr-only" id="studioTitle">Phòng thu</h2>
+      <h2 class="sr-only" id="studioTitle" data-i18n="studio.title">Studio</h2>
       <div class="studio-bar">
-        <div class="rec"><i></i><span id="recLabel">PHÒNG THU · ĐANG KẾT NỐI</span></div>
+        <div class="rec"><i></i><span id="recLabel">STUDIO · CONNECTING</span></div>
         <div class="quota" id="quotaBox" hidden>
-          <span id="quotaText">Hôm nay còn — ký tự</span>
+          <span id="quotaText"></span>
           <span class="qtrack" aria-hidden="true"><span id="quotaFill"></span></span>
         </div>
         <button class="btn btn-ghost btn-sm keybtn online-only" id="keyBtn" type="button" aria-haspopup="dialog">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12 20 3m-3 3 3 3m-6 0 2 2"/></svg><span id="keyBtnLabel">Nhập API key</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12 20 3m-3 3 3 3m-6 0 2 2"/></svg><span id="keyBtnLabel">Enter API key</span>
         </button>
       </div>
 
       <div class="acctbar online-only" id="acctBar" hidden>
         <div class="acct-info">
-          <span class="plan-badge" id="planBadge">Đang kiểm tra key…</span>
+          <span class="plan-badge" id="planBadge"></span>
           <span class="acct-usage" id="acctUsage"></span>
         </div>
         <div class="acct-actions">
-          <button class="btn btn-ghost btn-sm" id="portalBtn" type="button" hidden><span class="spinner" aria-hidden="true"></span><span>Quản lý gói</span></button>
-          <button class="linkbtn" id="logoutKey" type="button">Đăng xuất key</button>
+          <button class="btn btn-ghost btn-sm" id="portalBtn" type="button" hidden><span class="spinner" aria-hidden="true"></span><span data-i18n="acct.manage">Manage plan</span></button>
+          <button class="linkbtn" id="logoutKey" type="button" data-i18n="acct.logout">Remove key</button>
         </div>
       </div>
 
       <div class="studio-body">
         <div class="editor">
-          <div class="toolbar" role="toolbar" aria-label="Công cụ soạn thảo">
-            <label class="sr-only" for="insertVoice">Chèn thẻ giọng vào vị trí con trỏ</label>
-            <select id="insertVoice" class="tool-select online-only"><option value="">＋ Chèn giọng…</option></select>
-            <button class="chip" type="button" data-sample="podcast">Podcast 2 giọng</button>
-            <button class="chip" type="button" data-sample="ad">Quảng cáo</button>
-            <button class="chip" type="button" data-sample="lesson">Bài giảng</button>
-            <button class="chip" type="button" data-sample="story">Truyện kể</button>
-            <button class="chip" type="button" data-sample="news">Tin tức</button>
+          <div class="toolbar" role="toolbar" aria-label="Editor tools" data-i18n-attr="aria-label:editor.toolbar">
+            <label class="sr-only" for="insertVoice" data-i18n="editor.insertLabel">Insert a voice tag at the cursor</label>
+            <select id="insertVoice" class="tool-select online-only"><option value="" data-i18n="editor.insert">＋ Insert voice…</option></select>
+            <button class="chip" type="button" data-sample="podcast" data-i18n="sample.podcast">2-voice podcast</button>
+            <button class="chip" type="button" data-sample="ad" data-i18n="sample.ad">Ad spot</button>
+            <button class="chip" type="button" data-sample="lesson" data-i18n="sample.lesson">Lesson</button>
+            <button class="chip" type="button" data-sample="story" data-i18n="sample.story">Story</button>
+            <button class="chip" type="button" data-sample="news" data-i18n="sample.news">News</button>
           </div>
-          <label class="sr-only" for="txt">Văn bản cần đọc</label>
-          <textarea id="txt" spellcheck="false" aria-describedby="syntaxHint countLine">Xin chào, mình là DatTTS. Chỉ cần dán văn bản vào đây rồi bấm Tạo giọng đọc, bạn sẽ có ngay giọng nói tiếng Việt rõ ràng, có hồn, đủ dấu hỏi dấu ngã. Ngày 2/9/2026, mỗi ngày bạn có 20.000 ký tự miễn phí!</textarea>
-          <div class="meta" id="countLine"><span id="count">0 ký tự</span><span id="mode"></span><span id="estTime">~0 giây</span></div>
-          <p class="hint" id="syntaxHint">Nhiều giọng trong một bài: đặt <code>[Tên giọng]</code> trước đoạn cần đổi, ví dụ <code>[Mai Anh] Chào anh.</code> <code>[Thiện Minh] Chào em.</code> Phần trước thẻ đầu tiên dùng giọng đang chọn. <kbd>Ctrl</kbd>+<kbd>Enter</kbd> để tạo nhanh.</p>
+          <p class="hint vi-hint" data-i18n="editor.viHint">Paste Vietnamese text — numbers, dates and currency are read the Vietnamese way.</p>
+          <label class="sr-only" for="txt" data-i18n="editor.textLabel">Text to read aloud</label>
+          <textarea id="txt" spellcheck="false" lang="vi" aria-describedby="syntaxHint countLine">Xin chào, mình là DatTTS. Chỉ cần dán văn bản vào đây rồi bấm Tạo giọng đọc, bạn sẽ có ngay giọng nói tiếng Việt rõ ràng, có hồn, đủ dấu hỏi dấu ngã. Ngày 2/9/2026, mỗi ngày bạn có 20.000 ký tự miễn phí!</textarea>
+          <div class="meta" id="countLine"><span id="count"></span><span id="mode"></span><span id="estTime"></span></div>
+          <p class="hint" id="syntaxHint" data-i18n-html="editor.syntax">Several voices in one script: put <code>[Voice name]</code> before the part that switches, e.g. <code lang="vi">[Mai Anh] Chào anh.</code> <code lang="vi">[Thiện Minh] Chào em.</code> Text before the first tag uses the selected voice. <kbd>Ctrl</kbd>+<kbd>Enter</kbd> to generate.</p>
 
           <div class="alert" id="alert" role="alert" hidden></div>
 
           <div class="player" id="player" hidden>
             <div class="player-head">
-              <span class="eyebrow" id="playerTitle">Bản đọc</span>
+              <span class="eyebrow" id="playerTitle"></span>
               <span class="pmeta" id="playerMeta"></span>
             </div>
-            <div class="transcript" id="transcript" aria-label="Lời đọc, bấm một câu để nghe từ câu đó"></div>
+            <div class="transcript" id="transcript" lang="vi" aria-label="Transcript — click a sentence to play from there" data-i18n-attr="aria-label:player.transcript"></div>
             <div class="pcontrols" id="pcontrols">
-              <button class="iconbtn" id="prevSeg" type="button" aria-label="Câu trước"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5v14M19 5 9 12l10 7z"/></svg></button>
-              <button class="playbtn" id="playPause" type="button" aria-label="Phát"><svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l13-7.5z"/></svg><svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h3.5v16H7zM13.5 4H17v16h-3.5z"/></svg></button>
-              <button class="iconbtn" id="nextSeg" type="button" aria-label="Câu sau"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 5v14M5 5l10 7-10 7z"/></svg></button>
+              <button class="iconbtn" id="prevSeg" type="button" aria-label="Previous sentence" data-i18n-attr="aria-label:player.prev"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5v14M19 5 9 12l10 7z"/></svg></button>
+              <button class="playbtn" id="playPause" type="button" aria-label="Play"><svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l13-7.5z"/></svg><svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h3.5v16H7zM13.5 4H17v16h-3.5z"/></svg></button>
+              <button class="iconbtn" id="nextSeg" type="button" aria-label="Next sentence" data-i18n-attr="aria-label:player.next"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 5v14M5 5l10 7-10 7z"/></svg></button>
               <div class="seekwrap">
-                <label class="sr-only" for="seek">Vị trí phát</label>
+                <label class="sr-only" for="seek" data-i18n="player.seek">Playback position</label>
                 <input type="range" id="seek" min="0" max="1000" step="1" value="0">
               </div>
               <span class="time" id="time" aria-live="off">00:00 / 00:00</span>
             </div>
-            <div class="downloads" id="downloads" aria-label="Tải về"></div>
+            <div class="downloads" id="downloads" aria-label="Downloads" data-i18n-attr="aria-label:dl.aria"></div>
             <audio id="audio" preload="auto"></audio>
           </div>
         </div>
 
         <div class="controls">
           <div class="field online-only">
-            <span class="flabel">Giọng đang chọn</span>
-            <div class="current-voice" id="currentVoice"><span class="avatar">…</span><span><b>Đang tải giọng…</b><small></small></span></div>
+            <span class="flabel" data-i18n="controls.voice">Selected voice</span>
+            <div class="current-voice" id="currentVoice"><span class="avatar">…</span><span><b data-i18n="controls.loadingVoices">Loading voices…</b><small></small></span></div>
           </div>
           <div class="field offline-only">
-            <label for="voiceSel">Giọng đọc trên máy bạn</label>
+            <label for="voiceSel" data-i18n="controls.deviceVoice">Voice on your device</label>
             <select id="voiceSel"></select>
-            <p class="note" id="voiceNote">Chế độ thử dùng giọng có sẵn trong trình duyệt.</p>
+            <p class="note" id="voiceNote" data-i18n="offline.voiceNote">Preview mode uses your browser’s built-in voices.</p>
           </div>
           <div class="field">
-            <div class="row"><label for="rate">Tốc độ</label><span id="rateV">1,00×</span></div>
+            <div class="row"><label for="rate" data-i18n="controls.speed">Speed</label><span id="rateV">1.00×</span></div>
             <input type="range" id="rate" min="0.7" max="1.5" step="0.05" value="1">
           </div>
           <fieldset class="field seg-group online-only">
-            <legend class="flabel">Định dạng</legend>
+            <legend class="flabel" data-i18n="controls.format">Format</legend>
             <div class="segmented">
               <label><input type="radio" name="fmt" value="mp3" checked><span>MP3</span></label>
               <label><input type="radio" name="fmt" value="wav"><span>WAV</span></label>
@@ -134,11 +140,11 @@
           </fieldset>
           <canvas id="wave" aria-hidden="true"></canvas>
           <div class="actions">
-            <button class="btn btn-primary" id="genBtn" type="button"><span class="spinner" aria-hidden="true"></span><svg class="gicon" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2 1l11 6-11 6z" fill="currentColor"/></svg><span id="genLabel">Tạo giọng đọc</span></button>
-            <button class="btn btn-ghost offline-only" id="stopBtn" type="button">Dừng</button>
+            <button class="btn btn-primary" id="genBtn" type="button"><span class="spinner" aria-hidden="true"></span><svg class="gicon" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2 1l11 6-11 6z" fill="currentColor"/></svg><span id="genLabel">Generate voice</span></button>
+            <button class="btn btn-ghost offline-only" id="stopBtn" type="button" data-i18n="controls.stop">Stop</button>
           </div>
           <div class="progress" id="progress" hidden>
-            <div class="ptrack" role="progressbar" aria-label="Tiến độ tạo giọng đọc" aria-valuemin="0" aria-valuemax="100"><div class="pfill" id="pfill"></div></div>
+            <div class="ptrack" role="progressbar" aria-label="Generation progress" data-i18n-attr="aria-label:progress.aria" aria-valuemin="0" aria-valuemax="100"><div class="pfill" id="pfill"></div></div>
             <span id="progressText"></span>
           </div>
           <p class="sr-only" id="status" role="status" aria-live="polite"></p>
@@ -147,149 +153,169 @@
 
       <div class="panel online-only" id="voicePanel">
         <div class="panel-head">
-          <h3>Chọn giọng <small id="voiceCount"></small></h3>
-          <div class="filters" role="group" aria-label="Lọc giọng">
-            <label class="sr-only" for="fRegion">Vùng</label>
-            <select id="fRegion"><option value="">Mọi miền</option><option value="Bắc">Miền Bắc</option><option value="Trung">Miền Trung</option><option value="Nam">Miền Nam</option></select>
-            <label class="sr-only" for="fGender">Giới tính</label>
-            <select id="fGender"><option value="">Nam &amp; nữ</option><option value="female">Giọng nữ</option><option value="male">Giọng nam</option></select>
-            <label class="sr-only" for="fStyle">Phong cách</label>
-            <select id="fStyle"><option value="">Phong cách</option><option value="tu_nhien">Tự nhiên</option><option value="tin_tuc">Tin tức</option><option value="doc_truyen">Kể chuyện</option></select>
+          <h3><span data-i18n="voices.title">Choose a voice</span> <small id="voiceCount"></small></h3>
+          <div class="filters" role="group" aria-label="Filter voices" data-i18n-attr="aria-label:voices.filter">
+            <label class="sr-only" for="fRegion" data-i18n="voices.region">Region</label>
+            <select id="fRegion"><option value="" data-i18n="voices.allRegions">All regions</option><option value="Bắc" data-i18n="region.north">Northern</option><option value="Trung" data-i18n="region.central">Central</option><option value="Nam" data-i18n="region.south">Southern</option></select>
+            <label class="sr-only" for="fGender" data-i18n="voices.gender">Gender</label>
+            <select id="fGender"><option value="" data-i18n="voices.allGenders">Female &amp; male</option><option value="female" data-i18n="voices.female">Female voices</option><option value="male" data-i18n="voices.male">Male voices</option></select>
+            <label class="sr-only" for="fStyle" data-i18n="voices.style">Style</label>
+            <select id="fStyle"><option value="" data-i18n="voices.allStyles">Any style</option><option value="tu_nhien" data-i18n="style.tu_nhien">Natural</option><option value="tin_tuc" data-i18n="style.tin_tuc">News</option><option value="doc_truyen" data-i18n="style.doc_truyen">Storytelling</option></select>
           </div>
         </div>
-        <div class="vgrid" id="vgrid" role="list" aria-label="Danh sách giọng"></div>
-        <p class="note empty" id="vEmpty" hidden>Không có giọng nào khớp bộ lọc. <button class="linkbtn" type="button" id="clearFilters">Bỏ lọc</button></p>
+        <div class="vgrid" id="vgrid" role="list" aria-label="Voices" data-i18n-attr="aria-label:voices.list"></div>
+        <p class="note empty" id="vEmpty" hidden><span data-i18n="voices.empty">No voices match these filters.</span> <button class="linkbtn" type="button" id="clearFilters" data-i18n="voices.clear">Clear filters</button></p>
         <button class="btn btn-ghost btn-sm" id="moreVoices" type="button" hidden></button>
       </div>
 
       <div class="subpanels online-only">
         <details class="panel" id="dictPanel">
-          <summary><span>Từ điển phát âm</span> <small id="dictCount"></small></summary>
-          <p class="note">Dạy DatTTS đọc tên riêng, viết tắt, thuật ngữ theo ý bạn. Khớp nguyên từ, không phân biệt hoa thường. Lưu ngay trên trình duyệt này.</p>
+          <summary><span data-i18n="dict.title">Pronunciation dictionary</span> <small id="dictCount"></small></summary>
+          <p class="note" data-i18n="dict.note">Teach DatTTS how to say names, abbreviations and jargon. Whole words only, not case-sensitive. Saved in this browser.</p>
           <div class="dict" id="dictRows" role="list"></div>
-          <button class="btn btn-ghost btn-sm" id="dictAdd" type="button">＋ Thêm từ</button>
+          <button class="btn btn-ghost btn-sm" id="dictAdd" type="button" data-i18n="dict.add">＋ Add word</button>
         </details>
         <details class="panel" id="histPanel">
-          <summary><span>Lịch sử</span> <small id="histCount"></small></summary>
+          <summary><span data-i18n="hist.title">History</span> <small id="histCount"></small></summary>
           <ol class="history" id="history"></ol>
-          <p class="note" id="histEmpty">Chưa có bản đọc nào. Bản bạn tạo sẽ hiện ở đây (tối đa 10 bản, lưu trên trình duyệt này).</p>
+          <p class="note" id="histEmpty" data-i18n="hist.empty">Nothing yet. Your last 10 takes show up here, saved in this browser.</p>
         </details>
       </div>
     </section>
   </header>
 
-  <section id="thanh-dieu">
+  <section id="tones">
+    <span id="thanh-dieu" class="anchor-alias" aria-hidden="true"></span>
     <div class="sec-head">
-      <div class="eyebrow">Sáu thanh điệu</div>
-      <h2>Đọc sai dấu là sai nghĩa. DatTTS không đọc sai.</h2>
-      <p>Cùng một âm “ma”, sáu dấu cho sáu nghĩa khác nhau. Bấm từng ô để nghe bằng giọng đang chọn; đường cong là hình dáng cao độ của thanh.</p>
+      <div class="eyebrow" data-i18n="tones.eyebrow">Six tones</div>
+      <h2 data-i18n="tones.title">Get the tone wrong and you’ve said a different word.</h2>
+      <p data-i18n="tones.lead">Vietnamese is tonal: the same syllable “ma” means six different things depending on its tone mark. Click a card to hear it in the selected voice — the curve shows how the pitch moves.</p>
     </div>
-    <div class="tones" id="tones"></div>
+    <div class="tones" id="tonesGrid"></div>
   </section>
 
-  <section id="tinh-gia">
+  <section id="calculator">
+    <span id="tinh-gia" class="anchor-alias" aria-hidden="true"></span>
     <div class="sec-head">
-      <div class="eyebrow">Máy tính chi phí</div>
-      <h2>Kịch bản của bạn tốn bao nhiêu?</h2>
-      <p>Kéo thanh trượt hoặc chọn loại nội dung. Giá tính theo số ký tự, kể cả dấu cách.</p>
+      <div class="eyebrow" data-i18n="calc.eyebrow">Cost calculator</div>
+      <h2 data-i18n="calc.title">What will your script cost?</h2>
+      <p data-i18n="calc.lead">Drag the slider or pick a project type. Usage is counted in characters, spaces included.</p>
     </div>
     <div class="calc">
       <div class="calc-in">
         <div class="presets" id="presets">
-          <button class="chip" type="button" data-chars="1200">Quảng cáo 30 giây</button>
-          <button class="chip" type="button" data-chars="15000">Video YouTube 10 phút</button>
-          <button class="chip" type="button" data-chars="90000">Khóa học 1 chương</button>
-          <button class="chip" type="button" data-chars="600000">Sách nói trọn bộ</button>
+          <button class="chip" type="button" data-chars="1200" data-i18n="calc.p1">30-second ad</button>
+          <button class="chip" type="button" data-chars="15000" data-i18n="calc.p2">10-minute YouTube video</button>
+          <button class="chip" type="button" data-chars="90000" data-i18n="calc.p3">Course chapter</button>
+          <button class="chip" type="button" data-chars="600000" data-i18n="calc.p4">Full audiobook</button>
         </div>
         <div class="field">
-          <div class="row"><label for="chars">Số ký tự mỗi tháng</label><span id="charsV">15.000</span></div>
+          <div class="row"><label for="chars" data-i18n="calc.chars">Characters per month</label><span id="charsV">15,000</span></div>
           <input type="range" id="chars" min="0" max="100" step="1" value="40">
         </div>
-        <div class="meta" style="margin:0"><span id="audioLen">≈ 10 phút âm thanh</span><span>~1.500 ký tự / phút</span></div>
+        <div class="meta" style="margin:0"><span id="audioLen"></span><span id="perMin"></span></div>
       </div>
       <div class="calc-out" aria-live="polite">
-        <div class="eyebrow">Chi phí với DatTTS</div>
-        <div class="bigout" id="ourCost">0đ</div>
+        <div class="eyebrow" data-i18n="calc.ours">Your cost with DatTTS</div>
+        <div class="bigout" id="ourCost">$0</div>
+        <p class="vnd" id="calcVnd" hidden></p>
         <div class="cmp" id="cmp"></div>
-        <p class="note" id="calcNote">So sánh ước tính với giá niêm yết phổ biến của dịch vụ TTS quốc tế (~16 USD / 1 triệu ký tự) và thuê người đọc (~150.000đ / phút thành phẩm). Giá gói DatTTS niêm yết bằng USD, số tiền đồng chỉ là quy đổi tham khảo theo tỷ giá <span id="fxRate">25.400</span>đ/USD.</p>
+        <p class="note" id="calcNote"></p>
       </div>
     </div>
   </section>
 
-  <section id="bang-gia">
+  <section id="pricing">
+    <span id="bang-gia" class="anchor-alias" aria-hidden="true"></span>
     <div class="sec-head">
-      <div class="eyebrow">Bảng giá</div>
-      <h2>Giá rõ ràng. Huỷ lúc nào cũng được.</h2>
-      <p id="pricingLead">Gói miễn phí dùng được ngay trong phòng thu, không cần đăng ký. Gói trả phí thanh toán qua Polar bằng thẻ quốc tế, Apple Pay hoặc Google Pay; API key được gửi tới email của bạn ngay sau khi thanh toán.</p>
+      <div class="eyebrow" data-i18n="pricing.eyebrow">Pricing</div>
+      <h2 data-i18n="pricing.title">Simple pricing. Cancel anytime.</h2>
+      <p id="pricingLead" data-i18n="pricing.lead">Start free in the studio — no sign-up. Pro is billed securely by Polar with cards, Apple Pay or Google Pay, and your API key arrives by email right after checkout.</p>
     </div>
-    <div class="plans" id="plans">
+
+    <fieldset class="cycle" id="cycle">
+      <legend class="sr-only" data-i18n="pricing.cycle">Billing period</legend>
+      <label><input type="radio" name="cycle" value="week"><span><span data-i18n="cycle.week">Weekly</span><em class="mini" data-cycle-badge="week" hidden></em></span></label>
+      <label><input type="radio" name="cycle" value="month" checked><span><span data-i18n="cycle.month">Monthly</span><em class="mini" data-cycle-badge="month" hidden></em></span></label>
+      <label><input type="radio" name="cycle" value="year"><span><span data-i18n="cycle.year">Yearly</span><em class="mini" data-cycle-badge="year" hidden></em></span></label>
+    </fieldset>
+
+    <div class="plans plans-2" id="plans">
       <div class="plan" data-plan-id="free">
-        <h3>Dùng thử</h3>
-        <div class="price">Miễn phí <small>/ mãi mãi</small></div>
-        <ul><li>20.000 ký tự mỗi ngày</li><li>Đủ 25 giọng Bắc, Trung, Nam</li><li>MP3, WAV, OGG kèm phụ đề SRT, VTT</li><li>Không cần đăng ký</li></ul>
-        <a class="btn btn-ghost" href="#studio">Dùng ngay</a>
+        <h3 data-i18n="plan.free.name">Free</h3>
+        <div class="price" id="freePrice">$0</div>
+        <p class="per-note" data-i18n="plan.free.sub">Free forever · no sign-up</p>
+        <ul>
+          <li id="freeQuota">20,000 characters per day</li>
+          <li data-i18n="plan.f.voices">All 25 voices, North, Central and South</li>
+          <li data-i18n="plan.f.formats">MP3, WAV, OGG with SRT and VTT subtitles</li>
+          <li data-i18n="plan.f.multi">Multi-voice scripts and pronunciation dictionary</li>
+        </ul>
+        <a class="btn btn-ghost" href="#studio" data-i18n="plan.free.cta">Start free</a>
       </div>
-      <div class="plan hot" data-plan-id="personal">
-        <span class="tag">Đề xuất</span>
-        <h3>Cá nhân</h3>
-        <div class="price" data-price><span class="price-ph">Đang tải giá…</span></div>
+      <div class="plan hot" data-plan-id="pro">
+        <div class="tags"><span class="tag" id="proPopular" hidden></span><span class="tag save" id="proSave" hidden></span></div>
+        <h3 data-i18n="plan.pro.name">Pro</h3>
+        <div class="price" data-price><span class="price-ph" data-i18n="pricing.loading">Loading price…</span></div>
+        <p class="per-note" id="proBilled" hidden></p>
         <p class="vnd" data-vnd hidden></p>
-        <ul><li data-quota>1.000.000 ký tự mỗi tháng</li><li>Văn bản dài tới 100.000 ký tự mỗi lần</li><li>API key dùng cho phòng thu và API</li><li>Không bị giới hạn theo ngày hay theo IP</li></ul>
-        <button class="btn btn-primary" type="button" data-plan="ca-nhan" data-buy="personal" aria-disabled="true"><span class="spinner" aria-hidden="true"></span><span class="lbl">Đang tải…</span></button>
-      </div>
-      <div class="plan" data-plan-id="unlimited">
-        <h3>Không giới hạn</h3>
-        <div class="price" data-price><span class="price-ph">Đang tải giá…</span></div>
-        <p class="vnd" data-vnd hidden></p>
-        <ul><li data-quota>Dùng hợp lý tới 20.000.000 ký tự mỗi tháng</li><li>Đủ cho khoảng 220 giờ âm thanh mỗi tháng</li><li>API key cho lập trình viên</li><li>Hỗ trợ ưu tiên qua email</li></ul>
-        <button class="btn btn-ghost" type="button" data-plan="khong-gioi-han" data-buy="unlimited" aria-disabled="true"><span class="spinner" aria-hidden="true"></span><span class="lbl">Đang tải…</span></button>
+        <ul>
+          <li id="proQuota">1,000,000 characters per month</li>
+          <li data-i18n="plan.f.long">Up to 100,000 characters per request</li>
+          <li data-i18n="plan.f.api">API key for the studio and the REST API</li>
+          <li data-i18n="plan.f.nolimit">No daily or per-IP limits</li>
+          <li data-i18n="plan.f.commercial">Commercial use included</li>
+        </ul>
+        <button class="btn btn-primary" type="button" id="buyPro" data-buy="pro_month" aria-disabled="true"><span class="spinner" aria-hidden="true"></span><span class="lbl" data-i18n="pricing.loadingBtn">Loading…</span></button>
       </div>
     </div>
-    <p class="note plans-note" id="plansNote">“Không giới hạn” nghĩa là dùng hợp lý: tối đa 20.000.000 ký tự mỗi tháng cho một key, đủ cho hầu hết người làm nội dung. Cần nhiều hơn, hãy viết cho <a href="mailto:support@dattts.com">support@dattts.com</a>.</p>
+    <p class="note plans-note" id="plansNote" data-i18n-html="pricing.note">Every Pro plan has the same features — only the billing period differs. Need more than 1,000,000 characters a month? Write to <a href="mailto:support@dattts.com">support@dattts.com</a>.</p>
     <p class="buy-msg" id="buyMsg" role="status" aria-live="polite"></p>
 
     <form class="waitlist" id="waitlist" novalidate hidden>
       <div class="wl-copy">
-        <h3>Vào danh sách chờ</h3>
-        <p class="note">Gói trả phí sắp mở bán. Chúng tôi chỉ gửi một email khi gói của bạn mở. Không spam.</p>
+        <h3 data-i18n="wl.title">Join the waitlist</h3>
+        <p class="note" data-i18n="wl.note">Pro is launching soon. We’ll send exactly one email when it opens. No spam.</p>
       </div>
       <div class="wl-fields">
         <div class="field">
-          <label for="wlEmail">Email</label>
-          <input type="email" id="wlEmail" name="email" autocomplete="email" inputmode="email" placeholder="ban@vidu.vn" required>
+          <label for="wlEmail" data-i18n="wl.email">Email</label>
+          <input type="email" id="wlEmail" name="email" autocomplete="email" inputmode="email" placeholder="you@example.com" data-i18n-attr="placeholder:wl.placeholder" required>
         </div>
         <div class="field">
-          <label for="wlPlan">Gói quan tâm</label>
+          <label for="wlPlan" data-i18n="wl.plan">Plan</label>
           <select id="wlPlan" name="plan">
-            <option value="ca-nhan">Cá nhân</option>
-            <option value="khong-gioi-han">Không giới hạn</option>
-            <option value="doanh-nghiep">Doanh nghiệp · liên hệ</option>
+            <option value="pro_week" data-i18n="wl.opt.week">Pro · weekly</option>
+            <option value="pro_month" data-i18n="wl.opt.month">Pro · monthly</option>
+            <option value="pro_year" data-i18n="wl.opt.year">Pro · yearly</option>
+            <option value="business" data-i18n="wl.opt.business">Business · contact us</option>
           </select>
         </div>
-        <button class="btn btn-primary" id="wlBtn" type="submit"><span class="spinner" aria-hidden="true"></span><span>Giữ chỗ</span></button>
+        <button class="btn btn-primary" id="wlBtn" type="submit"><span class="spinner" aria-hidden="true"></span><span data-i18n="wl.submit">Save my spot</span></button>
       </div>
       <p class="wl-msg" id="wlMsg" role="status" aria-live="polite"></p>
     </form>
   </section>
 
-  <section>
-    <div class="sec-head"><div class="eyebrow">Ai đang cần</div><h2>Làm ra để đọc mọi thứ bằng tiếng Việt</h2></div>
+  <section id="uses">
+    <div class="sec-head"><div class="eyebrow" data-i18n="uses.eyebrow">Who it’s for</div><h2 data-i18n="uses.title">Anything you need said in Vietnamese</h2></div>
     <div class="uses">
-      <div class="use"><span class="n">01</span><h3>Video TikTok, YouTube</h3><p>Lồng tiếng review, tóm tắt phim, tin nhanh trong vài giây, phụ đề có sẵn để chèn vào video.</p></div>
-      <div class="use"><span class="n">02</span><h3>Khóa học online</h3><p>Biến giáo án thành bài giảng audio, sửa một câu không phải thu lại cả bài.</p></div>
-      <div class="use"><span class="n">03</span><h3>Truyện audio, podcast</h3><p>Mỗi nhân vật một giọng, chỉ cần gắn tên trong ngoặc vuông.</p></div>
-      <div class="use"><span class="n">04</span><h3>Tổng đài, cửa hàng</h3><p>Lời chào tổng đài, thông báo khuyến mãi phát loa tại quầy.</p></div>
+      <div class="use"><span class="n">01</span><h3 data-i18n="uses.1.t">Video localization</h3><p data-i18n="uses.1.d">Voice your YouTube, TikTok and product videos in Vietnamese, with subtitle files ready to drop into your editor.</p></div>
+      <div class="use"><span class="n">02</span><h3 data-i18n="uses.2.t">E-learning &amp; language learning</h3><p data-i18n="uses.2.d">Turn lessons into audio and give learners clear, native-sounding examples — slowed down when they need it.</p></div>
+      <div class="use"><span class="n">03</span><h3 data-i18n="uses.3.t">Apps, IVR &amp; games</h3><p data-i18n="uses.3.d">Phone menus, in-app prompts and character lines. Fix one sentence without booking a recording session.</p></div>
+      <div class="use"><span class="n">04</span><h3 data-i18n="uses.4.t">Audiobooks &amp; podcasts</h3><p data-i18n="uses.4.d">Stories and shows for Vietnamese listeners at home and abroad, with a different voice for every character.</p></div>
+      <div class="use"><span class="n">05</span><h3 data-i18n="uses.5.t">Developers</h3><p data-i18n="uses.5.d">A small JSON API: send text, get audio, subtitles and per-sentence timings. Long texts run as background jobs.</p></div>
     </div>
   </section>
 
   <section id="api">
     <div class="sec-head">
-      <div class="eyebrow">Dành cho lập trình viên</div>
-      <h2>Một lệnh <code class="inl">curl</code>, một file MP3.</h2>
-      <p>API JSON đơn giản: gửi văn bản, nhận đường dẫn âm thanh, phụ đề và mốc thời gian từng câu. Văn bản dài thì gửi vào hàng đợi rồi hỏi tiến độ.</p>
+      <div class="eyebrow" data-i18n="api.eyebrow">For developers</div>
+      <h2 data-i18n-html="api.title">One <code class="inl">curl</code>, one MP3.</h2>
+      <p data-i18n="api.lead">A simple JSON API: send text, get back the audio URL, subtitles and a timestamp for every sentence. For long texts, queue a job and poll its progress.</p>
     </div>
     <div class="codecard">
-      <div class="codebar"><span>POST /api/tts</span><button class="btn btn-ghost btn-sm" type="button" id="copyCurl">Chép lệnh</button></div>
+      <div class="codebar"><span>POST /api/tts</span><button class="btn btn-ghost btn-sm" type="button" id="copyCurl" data-i18n="api.copy">Copy</button></div>
 <pre id="curl"><code>curl https://dattts.com/api/tts \
   -H "Content-Type: application/json" \
   -d '{"text": "[Trúc Ly] Chào anh. [Thiện Minh] Chào em.",
@@ -298,47 +324,50 @@
 <span class="c"># → {"audio_url": "/api/files/….mp3", "srt_url": "…", "duration": 2.9,
 #    "segments": [{"text": "Chào anh.", "start": 0.0, "end": 1.1}, …]}</span></code></pre>
     </div>
-    <p class="note api-note">Có gói trả phí? Thêm header <code>X-API-Key: DATTTS-…</code> vào mọi request để dùng hạn mức tháng của gói thay cho lượt miễn phí theo IP. Xem gói và lượng đã dùng: <code>GET /api/me</code>.</p>
+    <p class="note api-note" data-i18n-html="api.note">On Pro? Add <code>X-API-Key: DATTTS-…</code> to every request to use your plan’s allowance instead of the free per-IP quota. Check your plan and usage with <code>GET /api/me</code>. Error messages follow your <code>Accept-Language</code> header (English or Vietnamese).</p>
   </section>
 
-  <section id="hoi-dap">
-    <div class="sec-head"><div class="eyebrow">Hỏi đáp</div><h2>Câu hỏi thường gặp</h2></div>
-    <details open><summary>Ký tự được tính như thế nào?</summary><p>Mỗi chữ cái, dấu câu và dấu cách là một ký tự. Chữ có dấu như “ữ” vẫn chỉ tính là một ký tự. Tạo lại đúng bản đã có, hoặc tải bản đó sang WAV/OGG, thì không bị tính thêm. Nếu dùng từ điển phát âm, phần chữ được thay dài thêm cũng tính vào số ký tự.</p></details>
-    <details><summary>Tôi có được dùng file âm thanh cho mục đích thương mại?</summary><p>Có. Mô hình giọng nói được phát hành theo giấy phép Apache-2.0, cho phép dùng thương mại kể cả 25 giọng có sẵn. Bạn được dùng file cho quảng cáo, video kiếm tiền và sản phẩm bán ra.</p></details>
-    <details><summary>Có giọng miền Trung, miền Nam không?</summary><p>Có. DatTTS có giọng miền Bắc, miền Trung và miền Nam, cả giọng nam lẫn giọng nữ, với ba phong cách: tự nhiên, tin tức và kể chuyện.</p></details>
-    <details><summary>Làm sao để hai người nói chuyện trong một file?</summary><p>Gõ tên giọng trong ngoặc vuông trước lời thoại, ví dụ <code>[Trúc Ly] Chào anh. [Thiện Minh] Chào em.</code> Nút “Chèn giọng” trong phòng thu làm việc này giúp bạn.</p></details>
-    <details><summary>DatTTS đọc sai tên riêng thì sao?</summary><p>Mở “Từ điển phát âm” trong phòng thu, thêm từ và cách đọc mong muốn, ví dụ “HLV” → “huấn luyện viên”. Số, ngày tháng, tiền tệ và đơn vị đo được tự động đọc đúng.</p></details>
-    <details><summary>Thanh toán bằng gì?</summary><p>Thanh toán qua <a href="https://polar.sh" rel="noopener">Polar</a> bằng thẻ Visa, Mastercard, JCB, American Express, Apple Pay hoặc Google Pay. Thẻ ghi nợ quốc tế (Visa/Mastercard debit) của ngân hàng Việt Nam dùng được bình thường. Thẻ ATM nội địa chỉ chạy qua Napas thì chưa được hỗ trợ; nếu chưa có thẻ quốc tế, bạn có thể mở thẻ ghi nợ quốc tế ở hầu hết ngân hàng trong nước. Giá niêm yết bằng USD, ngân hàng của bạn tự quy đổi sang đồng và có thể thu phí chuyển đổi ngoại tệ (thường 1–3%).</p></details>
-    <details><summary>Ai bán hàng và xuất hoá đơn?</summary><p>Polar Software Inc. là bên bán hàng chính thức (Merchant of Record): Polar thu tiền, tính thuế theo quốc gia của bạn, gửi hoá đơn và biên nhận qua email. Trên sao kê thẻ, giao dịch có thể hiện tên Polar thay vì DatTTS.</p></details>
-    <details><summary>Tôi nhận API key ở đâu?</summary><p>Ngay sau khi thanh toán, Polar gửi email kèm API key bắt đầu bằng <code>DATTTS</code>. Bấm “Nhập API key” trong phòng thu và dán key vào là dùng được. Bạn cũng xem lại hoặc đổi key bất kỳ lúc nào trong cổng khách hàng của Polar (nút “Quản lý gói”).</p></details>
-    <details><summary>Huỷ gói và hoàn tiền thế nào?</summary><p>Huỷ bất kỳ lúc nào trong cổng khách hàng Polar; gói vẫn dùng được đến hết kỳ đã trả và không bị trừ tiền kỳ sau. Hạn mức tháng tính theo tháng dương lịch và làm mới ngày 1 hằng tháng (giờ Việt Nam). Trong 14 ngày kể từ khi bị trừ tiền, nếu key đã dùng dưới 10% hạn mức tháng, chúng tôi hoàn tiền đầy đủ — xem <a href="hoan-tien.html">Chính sách hoàn tiền</a>.</p></details>
+  <section id="faq">
+    <span id="hoi-dap" class="anchor-alias" aria-hidden="true"></span>
+    <div class="sec-head"><div class="eyebrow" data-i18n="faq.eyebrow">FAQ</div><h2 data-i18n="faq.title">Frequently asked questions</h2></div>
+    <details open><summary data-i18n="faq.q1">How are characters counted?</summary><p data-i18n-html="faq.a1">Every letter, digit, punctuation mark and space counts as one character — accented letters like “ữ” included. Regenerating an identical take, or downloading it again as WAV or OGG, is free. Dictionary replacements count at their expanded length.</p></details>
+    <details><summary data-i18n="faq.q2">Can I use the audio commercially?</summary><p data-i18n-html="faq.a2">Yes. The voice model is released under the Apache-2.0 license, which allows commercial use of all 25 built-in voices. Use your files in ads, monetized videos, apps and products you sell.</p></details>
+    <details><summary data-i18n="faq.q3">Do I need to speak Vietnamese?</summary><p data-i18n-html="faq.a3">No, but your text must be in Vietnamese — DatTTS doesn’t translate. Paste a translation from your team or translator and the studio reads it with correct tones. Numbers, dates, currency and units are expanded and read the Vietnamese way automatically.</p></details>
+    <details><summary data-i18n="faq.q4">Which accents are available?</summary><p data-i18n-html="faq.a4">Northern (Hanoi), Central and Southern (Saigon) accents, female and male, in three styles: natural, news and storytelling.</p></details>
+    <details><summary data-i18n="faq.q5">How do I get two people talking in one file?</summary><p data-i18n-html="faq.a5">Type the voice name in square brackets before each line, e.g. <code lang="vi">[Trúc Ly] Chào anh. [Thiện Minh] Chào em.</code> The “Insert voice” menu in the studio does it for you.</p></details>
+    <details><summary data-i18n="faq.q6">Who sells Pro and issues invoices?</summary><p data-i18n-html="faq.a6"><a href="https://polar.sh" rel="noopener">Polar</a> (Polar Software Inc.) is our Merchant of Record. Polar takes the payment, charges sales tax or VAT according to your country, and emails your invoice and receipt. Your card statement may show Polar instead of DatTTS.</p></details>
+    <details><summary data-i18n="faq.q7">How can I pay?</summary><p data-i18n-html="faq.a7">Visa, Mastercard, American Express, JCB, Apple Pay and Google Pay, processed by Polar. Prices are in US dollars. <b>In Vietnam?</b> International Visa or Mastercard cards (debit cards included) work; domestic ATM cards that only run on the Napas network are not accepted.</p></details>
+    <details><summary data-i18n="faq.q8">Where do I get my API key?</summary><p data-i18n-html="faq.a8">Right after checkout, Polar emails you an API key starting with <code>DATTTS</code>. Click “Enter API key” in the studio and paste it in. You can view or rotate the key anytime in Polar’s customer portal (the “Manage plan” button).</p></details>
+    <details><summary data-i18n="faq.q9">How do I cancel or get a refund?</summary><p data-i18n-html="faq.a9">Cancel anytime in the Polar customer portal — you keep Pro until the end of the period you paid for and won’t be charged again. First purchase not working out? Ask within 14 days (3 days on Weekly) and, if you’ve used less than 10% of the first period’s allowance, we refund you in full. See the <a href="refund.html" data-href-vi="hoan-tien.html">refund policy</a>.</p></details>
+    <details><summary data-i18n="faq.q10">When do the allowances reset?</summary><p data-i18n-html="faq.a10">All resets use Vietnam time (UTC+7). Free: daily at midnight. Pro Weekly: every Monday at 00:00. Pro Monthly and Yearly: on the 1st of each month. Unused characters don’t roll over.</p></details>
   </section>
 
   <footer>
     <span>© 2026 DatTTS · dattts.com</span>
-    <span>Giọng đọc tạo bởi <a href="https://huggingface.co/pnnbao-ump/VieNeu-TTS-v3-Turbo" rel="noopener">VieNeu-TTS by Phạm Nguyễn Ngọc Bảo</a> (Apache-2.0)</span>
-    <nav class="footlinks" aria-label="Chính sách"><a href="dieu-khoan.html">Điều khoản</a><a href="bao-mat.html">Bảo mật</a><a href="hoan-tien.html">Hoàn tiền</a><a href="mailto:support@dattts.com">support@dattts.com</a></nav>
+    <span><span data-i18n="footer.credit">Voices by</span> <a href="https://huggingface.co/pnnbao-ump/VieNeu-TTS-v3-Turbo" rel="noopener">VieNeu-TTS by Phạm Nguyễn Ngọc Bảo</a> (Apache-2.0)</span>
+    <nav class="footlinks" aria-label="Policies" data-i18n-attr="aria-label:footer.aria"><a href="terms.html" data-href-vi="dieu-khoan.html" data-i18n="footer.terms">Terms</a><a href="privacy.html" data-href-vi="bao-mat.html" data-i18n="footer.privacy">Privacy</a><a href="refund.html" data-href-vi="hoan-tien.html" data-i18n="footer.refund">Refunds</a><a href="mailto:support@dattts.com">support@dattts.com</a></nav>
   </footer>
 </div>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
 <dialog class="keydlg" id="keyDlg" aria-labelledby="keyDlgTitle">
   <form id="keyForm" novalidate>
-    <h3 id="keyDlgTitle">Nhập API key</h3>
-    <p class="note">Sau khi thanh toán, Polar gửi API key bắt đầu bằng <code>DATTTS</code> tới email của bạn. Key cũng nằm trong cổng khách hàng Polar.</p>
+    <h3 id="keyDlgTitle" data-i18n="key.title">Enter API key</h3>
+    <p class="note" data-i18n-html="key.note">After checkout, Polar emails you an API key starting with <code>DATTTS</code>. It’s also in the Polar customer portal.</p>
     <div class="field">
-      <label for="keyInput">API key</label>
+      <label for="keyInput" data-i18n="key.label">API key</label>
       <input type="text" id="keyInput" name="key" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="DATTTS-XXXXXXXX-…" aria-describedby="keyMsg">
     </div>
     <p class="wl-msg" id="keyMsg" role="status" aria-live="polite"></p>
     <div class="dlg-actions">
-      <button class="btn btn-ghost" type="button" id="keyCancel">Huỷ</button>
-      <button class="btn btn-primary" type="submit" id="keySave"><span class="spinner" aria-hidden="true"></span><span>Kiểm tra và lưu</span></button>
+      <button class="btn btn-ghost" type="button" id="keyCancel" data-i18n="key.cancel">Cancel</button>
+      <button class="btn btn-primary" type="submit" id="keySave"><span class="spinner" aria-hidden="true"></span><span data-i18n="key.save">Check &amp; save</span></button>
     </div>
-    <p class="note">Key chỉ lưu trên trình duyệt này và được gửi kèm mỗi yêu cầu tới máy chủ DatTTS. Đừng dùng key trên máy công cộng.</p>
+    <p class="note" data-i18n="key.privacy">Your key is stored only in this browser and sent with each request to the DatTTS server. Don’t use it on shared computers.</p>
   </form>
 </dialog>
 
+<script src="i18n.js"></script>
 <script src="config.js"></script>
 <script src="app.js"></script>
 </body>

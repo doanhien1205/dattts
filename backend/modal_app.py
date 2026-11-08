@@ -2,11 +2,18 @@
 
     cd backend
     modal secret create dattts ADMIN_TOKEN=... API_KEYS=key1,key2   # bắt buộc tạo trước (có thể để trống giá trị)
-    # Thanh toán Polar (tuỳ chọn; thiếu POLAR_ACCESS_TOKEN → billing tắt, web hiện "Sắp mở bán"):
+    # Thanh toán Polar (tuỳ chọn; thiếu POLAR_ACCESS_TOKEN → billing tắt, web hiện "Coming soon").
+    # Danh sách đầy đủ + ID thật của gói Pro: backend/.env.example. Token/whsec CHỈ đặt trong secret.
     modal secret create dattts --force ADMIN_TOKEN=... API_KEYS=... \
         PUBLIC_BASE_URL=https://dattts.com POLAR_SERVER=production POLAR_ACCESS_TOKEN=polar_oat_... \
-        POLAR_ORGANIZATION_ID=... POLAR_WEBHOOK_SECRET=whsec_... \
-        POLAR_PRODUCT_PERSONAL=... POLAR_PRODUCT_UNLIMITED=... POLAR_BENEFIT_PERSONAL=... POLAR_BENEFIT_UNLIMITED=...
+        POLAR_ORGANIZATION_ID=cd16dd37-dd25-4e92-aaaa-23509784d129 POLAR_WEBHOOK_SECRET=whsec_... \
+        POLAR_PRODUCT_PRO_WEEK=3d54ccce-5b59-4903-a23b-18fd8c9e6fe1 \
+        POLAR_BENEFIT_PRO_WEEK=e02132d4-8b7c-4779-a271-cf778cada689 \
+        POLAR_PRODUCT_PRO_MONTH=5cdb0d3a-edf1-46aa-ba4f-b1e4303e60bf \
+        POLAR_BENEFIT_PRO_MONTH=de10e5c4-5357-4ec8-81ca-5b2848226ac0 \
+        POLAR_PRODUCT_PRO_YEAR=673f4798-5c0b-4a6f-a6bc-002054bcd621 \
+        POLAR_BENEFIT_PRO_YEAR=170cee60-1cd2-428e-8e46-a50e753189fb
+    # Tuỳ chọn: PLAN_PRO_WEEK_CHARS=250000 PLAN_PRO_MONTH_CHARS=1000000 PLAN_PRO_YEAR_MONTHLY_CHARS=1000000
     # Webhook Polar: https://<tên miền>/api/billing/webhook (định dạng Raw; sự kiện subscription.*, order.paid,
     # benefit_grant.*, customer.state_changed). Chỉ hàm ``web`` dùng các biến POLAR_*; worker không gọi Polar.
     modal run modal_app.py::download_models                          # tải mô hình vào Volume (một lần)
@@ -165,7 +172,7 @@ class TTSWorker:
         try:
             return render_and_store(self.engine, self.store, request_from_dict(req))
         except RenderError as e:
-            return {"error": {"code": e.code, "message": e.message, "status": e.status}}
+            return {"error": {**e.to_dict(), "status": e.status}}
 
     @modal.method()
     def run_job(self, job_id: str, req: dict) -> str:
@@ -253,7 +260,8 @@ class ModalRenderer:
         out = self.worker.render.remote(asdict(req))
         if "error" in out:
             e = out["error"]
-            raise RenderError(e["code"], e["message"], int(e.get("status", 400)))
+            raise RenderError(e["code"], None if e.get("key") else e.get("message"), int(e.get("status", 400)),
+                              key=e.get("key"), params=e.get("params"))
         return out
 
     def submit(self, job_id: str, req) -> None:

@@ -5,7 +5,7 @@ Mô phỏng đúng các endpoint Polar mà ``backend/dattts/billing.py`` dùng:
 
     POST /v1/checkouts/                          tạo phiên thanh toán → 201 {id, url, status:"open", ...}
     GET  /v1/checkouts/{id}                      đọc phiên (status: open|expired|confirmed|succeeded|failed)
-    GET  /v1/products/{id}                       sản phẩm + giá (cent, USD, theo tháng)
+    GET  /v1/products/{id}                       sản phẩm + giá (cent, USD; chu kỳ week/month/year ở cấp sản phẩm)
     POST /v1/license-keys/validate               (cần token) xác thực license key → 200, 404; thiếu/sai dạng organization_id → 422
     POST /v1/customer-portal/license-keys/validate  (công khai) như trên
     POST /v1/customer-sessions/                  → 201 {customer_portal_url, token, expires_at}
@@ -20,7 +20,7 @@ và vài trang/endpoint riêng của bản giả:
     GET  /portal?token=…         "cổng khách hàng" HTML (xem key, nút huỷ gói → thu hồi key + gửi webhook)
     POST /_fake/webhook          gửi một webhook ĐÃ KÝ ĐÚNG tới DatTTS. Body JSON:
                                    {"type": "subscription.revoked",          # bắt buộc
-                                    "key": "DATTTS-PERSONAL-TEST",           # hoặc "customer_id": "…"
+                                    "key": "DATTTS-PRO-MONTH-TEST",          # hoặc "customer_id": "…"
                                     "revoke": true,                          # thu hồi key của khách trước khi gửi
                                     "data": {...},                           # ghi đè/ bổ sung payload.data
                                     "url": "http://…/api/billing/webhook",   # mặc định --webhook-url
@@ -32,10 +32,11 @@ và vài trang/endpoint riêng của bản giả:
     GET  /_fake/outbox           "hộp thư" — email Polar lẽ ra gửi cho khách (kèm key mới cấp)
 
 Dữ liệu mẫu (cố định, để điền env cho DatTTS — in ra bằng ``--print-env``):
-    key DATTTS-PERSONAL-TEST   → gói Cá nhân,        khách an.nguyen@example.com
-    key DATTTS-UNLIMITED-TEST  → gói Không giới hạn, khách binh.tran@example.com
+    key DATTTS-PRO-MONTH-TEST  → gói Pro tháng, khách an.nguyen@example.com
+    key DATTTS-PRO-YEAR-TEST   → gói Pro năm,   khách binh.tran@example.com
+    key DATTTS-PRO-WEEK-TEST   → gói Pro tuần,  khách chi.pham@example.com
     key DATTTS-REVOKED-TEST    → đã thu hồi (validate trả 404)
-    sản phẩm Cá nhân $2.99/tháng, Không giới hạn $9.99/tháng
+    sản phẩm Pro tuần $1.99/tuần, Pro tháng $4.99/tháng, Pro năm $49.99/năm (như Polar thật)
 
 Cách chạy (dùng venv của backend):
 
@@ -43,11 +44,11 @@ Cách chạy (dùng venv của backend):
     eval "$(python scripts/fake_polar.py --print-env)"      # đặt POLAR_* trỏ vào Polar giả
     cd backend && PUBLIC_BASE_URL=http://127.0.0.1:8765 python server_local.py --fake --port 8765
 
-Rồi mở http://127.0.0.1:8765/#bang-gia → "Mua gói Cá nhân" → trang thanh toán giả → "Thanh toán"
-→ quay về /thanh-toan.html báo thành công. Gửi webhook thử:
+Rồi mở http://127.0.0.1:8765/#pricing → "Get Pro" → trang thanh toán giả → "Thanh toán"
+→ quay về /checkout-success.html báo thành công. Gửi webhook thử:
 
     curl -s -X POST http://127.0.0.1:8899/_fake/webhook -H 'Content-Type: application/json' \
-         -d '{"type":"subscription.revoked","key":"DATTTS-PERSONAL-TEST","revoke":true}'
+         -d '{"type":"subscription.revoked","key":"DATTTS-PRO-MONTH-TEST","revoke":true}'
 
 Chữ ký webhook theo Standard Webhooks: ``webhook-signature: v1,<base64(HMAC-SHA256(key, id.ts.body))>``
 với key = base64decode(secret bỏ "whsec_") (bí mật kiểu mới); ``--legacy-secret`` ký bằng utf-8 của cả
@@ -78,21 +79,25 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 # ───────────── Dữ liệu cố định (khớp --print-env) ─────────────
 ORG_ID = "0b6c3a52-6f0a-4d7e-9d38-5a1c2f7e9a01"
-PRODUCT_PERSONAL = "1f1e0c2a-2b7d-4c55-8a6e-0d0f5d1a7b11"
-PRODUCT_UNLIMITED = "2a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c22"
-BENEFIT_PERSONAL = "3b3c4d5e-6f70-4b8c-9dae-1f2a3b4c5d33"
-BENEFIT_UNLIMITED = "4c4d5e6f-7081-4c9d-aebf-2a3b4c5d6e44"
-CUSTOMER_PERSONAL = "5d5e6f70-8192-4dae-bfc0-3b4c5d6e7f55"
-CUSTOMER_UNLIMITED = "6e6f7081-92a3-4ebf-c0d1-4c5d6e7f8066"
+PRODUCT_PRO_MONTH = "1f1e0c2a-2b7d-4c55-8a6e-0d0f5d1a7b11"
+PRODUCT_PRO_YEAR = "2a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c22"
+PRODUCT_PRO_WEEK = "8a8b8c8d-9e9f-4a0b-8c1d-2e3f4a5b6c88"
+BENEFIT_PRO_MONTH = "3b3c4d5e-6f70-4b8c-9dae-1f2a3b4c5d33"
+BENEFIT_PRO_YEAR = "4c4d5e6f-7081-4c9d-aebf-2a3b4c5d6e44"
+BENEFIT_PRO_WEEK = "9b9c9d9e-afb0-4c1d-9e2f-3a4b5c6d7e99"
+CUSTOMER_PRO_MONTH = "5d5e6f70-8192-4dae-bfc0-3b4c5d6e7f55"
+CUSTOMER_PRO_YEAR = "6e6f7081-92a3-4ebf-c0d1-4c5d6e7f8066"
+CUSTOMER_PRO_WEEK = "a0a1a2a3-b4b5-4c6d-8e7f-8091a2b3c4aa"
 CUSTOMER_REVOKED = "7f708192-a3b4-4fc0-d1e2-5d6e7f809177"
 DEFAULT_TOKEN = "polar_oat_fake_dattts_local"
 # 32 byte cố định → bí mật kiểu mới "whsec_<base64>"
 DEFAULT_WEBHOOK_SECRET = "whsec_" + base64.b64encode(b"dattts-fake-polar-webhook-key-32").decode()
 
 TEST_KEYS = {
-    "DATTTS-PERSONAL-TEST": ("personal", CUSTOMER_PERSONAL, "granted"),
-    "DATTTS-UNLIMITED-TEST": ("unlimited", CUSTOMER_UNLIMITED, "granted"),
-    "DATTTS-REVOKED-TEST": ("personal", CUSTOMER_REVOKED, "revoked"),
+    "DATTTS-PRO-MONTH-TEST": ("pro_month", CUSTOMER_PRO_MONTH, "granted"),
+    "DATTTS-PRO-YEAR-TEST": ("pro_year", CUSTOMER_PRO_YEAR, "granted"),
+    "DATTTS-PRO-WEEK-TEST": ("pro_week", CUSTOMER_PRO_WEEK, "granted"),
+    "DATTTS-REVOKED-TEST": ("pro_month", CUSTOMER_REVOKED, "revoked"),
 }
 
 
@@ -115,17 +120,22 @@ def _iso(ts: float | None = None) -> str:
 
 def _seed() -> dict:
     products = {
-        PRODUCT_PERSONAL: {"plan": "personal", "name": "DatTTS Cá nhân", "benefit": BENEFIT_PERSONAL, "price": 299},
-        PRODUCT_UNLIMITED: {"plan": "unlimited", "name": "DatTTS Không giới hạn", "benefit": BENEFIT_UNLIMITED, "price": 999},
+        PRODUCT_PRO_WEEK: {"plan": "pro_week", "name": "DatTTS Pro — Weekly", "benefit": BENEFIT_PRO_WEEK,
+                           "price": 199, "interval": "week"},
+        PRODUCT_PRO_MONTH: {"plan": "pro_month", "name": "DatTTS Pro — Monthly", "benefit": BENEFIT_PRO_MONTH,
+                            "price": 499, "interval": "month"},
+        PRODUCT_PRO_YEAR: {"plan": "pro_year", "name": "DatTTS Pro — Yearly", "benefit": BENEFIT_PRO_YEAR,
+                           "price": 4999, "interval": "year"},
     }
     customers = {
-        CUSTOMER_PERSONAL: {"id": CUSTOMER_PERSONAL, "email": "an.nguyen@example.com", "name": "Nguyễn An"},
-        CUSTOMER_UNLIMITED: {"id": CUSTOMER_UNLIMITED, "email": "binh.tran@example.com", "name": "Trần Bình"},
+        CUSTOMER_PRO_MONTH: {"id": CUSTOMER_PRO_MONTH, "email": "an.nguyen@example.com", "name": "Nguyễn An"},
+        CUSTOMER_PRO_YEAR: {"id": CUSTOMER_PRO_YEAR, "email": "binh.tran@example.com", "name": "Trần Bình"},
+        CUSTOMER_PRO_WEEK: {"id": CUSTOMER_PRO_WEEK, "email": "chi.pham@example.com", "name": "Phạm Chi"},
         CUSTOMER_REVOKED: {"id": CUSTOMER_REVOKED, "email": "cu.le@example.com", "name": "Lê Cư"},
     }
     keys = {}
     for k, (plan, cid, status) in TEST_KEYS.items():
-        pid = PRODUCT_PERSONAL if plan == "personal" else PRODUCT_UNLIMITED
+        pid = next(p for p, v in products.items() if v["plan"] == plan)
         keys[k] = {"id": str(uuid.uuid5(uuid.NAMESPACE_URL, "fake-polar/" + k)), "key": k, "customer_id": cid,
                    "benefit_id": products[pid]["benefit"], "status": status, "created_at": _iso()}
     return {"products": products, "customers": customers, "keys": keys, "checkouts": {}, "sessions": {},
@@ -149,7 +159,7 @@ class FakePolar:
         p = self.state["products"][pid]
         return {
             "id": pid, "name": p["name"], "description": None, "is_recurring": True, "is_archived": False,
-            "organization_id": ORG_ID, "recurring_interval": "month", "recurring_interval_count": 1,
+            "organization_id": ORG_ID, "recurring_interval": p["interval"], "recurring_interval_count": 1,
             "created_at": _iso(0), "modified_at": None,
             "prices": [{"id": str(uuid.uuid5(uuid.NAMESPACE_URL, "price/" + pid)), "type": "recurring",
                         "amount_type": "fixed", "price_amount": p["price"], "price_currency": "usd",
@@ -215,12 +225,12 @@ class FakePolar:
         if product_id is None:
             bens = {k["benefit_id"] for k in self.state["keys"].values() if k["customer_id"] == customer_id}
             product_id = next((pid for pid, p in self.state["products"].items() if p["benefit"] in bens),
-                              PRODUCT_PERSONAL)
+                              PRODUCT_PRO_MONTH)
         p = self.state["products"][product_id]
         return {"id": str(uuid.uuid5(uuid.NAMESPACE_URL, f"sub/{customer_id}/{product_id}")), "status": status,
                 "customer_id": customer_id, "product_id": product_id,
                 "customer": {"id": customer_id, "email": c["email"], "name": c["name"]},
-                "amount": p["price"], "currency": "usd", "recurring_interval": "month",
+                "amount": p["price"], "currency": "usd", "recurring_interval": p["interval"],
                 "metadata": {"plan": p["plan"]}, "modified_at": _iso()}
 
     def revoke_customer(self, customer_id: str) -> int:
@@ -369,7 +379,7 @@ def create_app(fp: FakePolar) -> FastAPI:
         email = html.escape(co.get("customer_email") or "khach.moi@example.com")
         return page("Thanh toán " + p["name"], f"""
 <h1 id="fakeProduct">{html.escape(p['name'])}</h1>
-<p><b id="fakeAmount">{amount}</b> / tháng</p>
+<p><b id="fakeAmount">{amount}</b> / {html.escape(p.get('interval') or 'month')}</p>
 <form method="post" action="/checkout/{checkout_id}/pay">
   <p><label>Email <input name="email" id="fakeEmail" value="{email}"></label></p>
   <p><label>Số thẻ <input name="card" value="4242 4242 4242 4242" readonly></label></p>
@@ -519,10 +529,12 @@ def print_env(port: int, token: str, secret: str) -> None:
         "POLAR_ACCESS_TOKEN": token,
         "POLAR_ORGANIZATION_ID": ORG_ID,
         "POLAR_WEBHOOK_SECRET": secret,
-        "POLAR_PRODUCT_PERSONAL": PRODUCT_PERSONAL,
-        "POLAR_PRODUCT_UNLIMITED": PRODUCT_UNLIMITED,
-        "POLAR_BENEFIT_PERSONAL": BENEFIT_PERSONAL,
-        "POLAR_BENEFIT_UNLIMITED": BENEFIT_UNLIMITED,
+        "POLAR_PRODUCT_PRO_WEEK": PRODUCT_PRO_WEEK,
+        "POLAR_PRODUCT_PRO_MONTH": PRODUCT_PRO_MONTH,
+        "POLAR_PRODUCT_PRO_YEAR": PRODUCT_PRO_YEAR,
+        "POLAR_BENEFIT_PRO_WEEK": BENEFIT_PRO_WEEK,
+        "POLAR_BENEFIT_PRO_MONTH": BENEFIT_PRO_MONTH,
+        "POLAR_BENEFIT_PRO_YEAR": BENEFIT_PRO_YEAR,
     }
     for k, v in env.items():
         print(f"export {k}='{v}'")

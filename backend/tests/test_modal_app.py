@@ -49,7 +49,7 @@ class _FakeWorker:
             try:
                 return render_and_store(eng, store, request_from_dict(d))
             except RenderError as e:
-                return {"error": {"code": e.code, "message": e.message, "status": e.status}}
+                return {"error": {**e.to_dict(), "status": e.status}}  # như TTSWorker.render
 
         self.render = _Remote(_render)
         self.run_job = _Remote(lambda jid, d: run_job(store, jid, request_from_dict(d),
@@ -89,3 +89,20 @@ def test_modal_renderer_maps_worker_errors(tmp_path):
     with pytest.raises(RenderError) as ei:
         r.render(RenderRequest(text="x"))
     assert ei.value.code == "empty_audio" and ei.value.status == 422
+
+
+def test_modal_renderer_keeps_bilingual_error_key(tmp_path):
+    import modal_app
+    from dattts.render import RenderError, RenderRequest
+
+    err = RenderError("unknown_voice", status=400, params={"name": "Ai Đó", "examples": "Trúc Ly"})
+
+    class W:
+        render = _Remote(lambda d: {"error": {**err.to_dict(), "status": err.status}})
+
+    r = modal_app.ModalRenderer(LocalStore(str(tmp_path)), worker=W())
+    with pytest.raises(RenderError) as ei:
+        r.render(RenderRequest(text="x"))
+    assert ei.value.key == "unknown_voice" and ei.value.params == {"name": "Ai Đó", "examples": "Trúc Ly"}
+    assert ei.value.localized("vi").startswith("Không tìm thấy giọng “Ai Đó”")
+    assert ei.value.localized("en").startswith("Voice “Ai Đó” not found")

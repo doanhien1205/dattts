@@ -242,3 +242,43 @@ def verify_webhook(body: bytes, headers, secret: str, tolerance=300) -> bool
 - Studio: nút "Nhập API key" → hộp nhập (lưu localStorage, gửi header `X-API-Key` cho mọi request /api); hiện gói + hạn mức tháng từ /api/me; nút "Quản lý gói" → /api/billing/portal; nút "Đăng xuất key". Key sai → thông báo rõ và gỡ key.
 - FAQ: bỏ VietQR/MoMo/ZaloPay; ghi: thanh toán bằng thẻ Visa/Mastercard/JCB/Amex (kể cả thẻ ghi nợ quốc tế của ngân hàng Việt Nam), Apple Pay, Google Pay qua Polar; hoá đơn do Polar phát hành; huỷ bất kỳ lúc nào trong cổng khách hàng.
 - Trang pháp lý (Polar duyệt tài khoản cần có): `web/dieu-khoan.html` (Điều khoản dịch vụ), `web/bao-mat.html` (Chính sách bảo mật), `web/hoan-tien.html` (Chính sách hoàn tiền: hoàn trong 14 ngày nếu dùng < 10% hạn mức, yêu cầu qua support@dattts.com; Polar xử lý hoàn tiền). Mỗi trang có tóm tắt tiếng Anh ở cuối (Polar review bằng tiếng Anh), nêu rõ Polar là Merchant of Record/reseller, email hỗ trợ support@dattts.com, giấy phép VieNeu-TTS. Footer mọi trang link tới 3 trang này.
+
+---
+
+# Phần 3 — Go global (EN mặc định) + gói Pro tuần/tháng/năm (THAY THẾ gói personal/unlimited của Phần 2)
+
+Định vị: **"The Vietnamese voice studio"** — sản phẩm ngách cho thị trường toàn cầu: ai cần giọng đọc TIẾNG VIỆT tự nhiên (creator, brand bản địa hoá sang tiếng Việt, e-learning, app/game, kênh cho cộng đồng người Việt ở nước ngoài, developer). Giá USD, số kiểu quốc tế, thanh toán chỉ qua Polar.
+
+## Gói (Polar production đã tạo sẵn — dùng đúng các ID này làm giá trị mẫu trong README/.env.example)
+| plan id | Polar product | benefit (License Key, prefix DATTTS) | giá | hạn mức |
+|---|---|---|---|---|
+| free | — | — | $0 | 20,000 ký tự / ngày / IP (như cũ) |
+| pro_week | 3d54ccce-5b59-4903-a23b-18fd8c9e6fe1 | e02132d4-8b7c-4779-a271-cf778cada689 | $1.99 / tuần | 250,000 ký tự / tuần (tuần ISO theo giờ VN, reset thứ Hai 00:00 UTC+7) |
+| pro_month | 5cdb0d3a-edf1-46aa-ba4f-b1e4303e60bf | de10e5c4-5357-4ec8-81ca-5b2848226ac0 | $4.99 / tháng — "Most popular", "Save 37%" so với 4 × $1.99 | 1,000,000 ký tự / tháng |
+| pro_year | 673f4798-5c0b-4a6f-a6bc-002054bcd621 | 170cee60-1cd2-428e-8e46-a50e753189fb | $49.99 / năm — "Save 17%" so với 12 × $4.99 | 1,000,000 ký tự / tháng |
+Organization id: cd16dd37-dd25-4e92-aaaa-23509784d129. Tất cả gói Pro có cùng tính năng (25 giọng, MP3/WAV/OGG, SRT/VTT, nhiều giọng, API, dùng thương mại); chỉ khác chu kỳ.
+Phần trăm "Save" tính từ giá thật lấy từ Polar (làm tròn xuống), không hard-code.
+
+Env mới (bỏ POLAR_PRODUCT_PERSONAL/UNLIMITED, POLAR_BENEFIT_PERSONAL/UNLIMITED, PLAN_PERSONAL_*/PLAN_UNLIMITED_*):
+`POLAR_PRODUCT_PRO_WEEK|MONTH|YEAR`, `POLAR_BENEFIT_PRO_WEEK|MONTH|YEAR`, `PLAN_PRO_WEEK_CHARS=250000`, `PLAN_PRO_MONTH_CHARS=1000000`, `PLAN_PRO_YEAR_MONTHLY_CHARS=1000000`.
+Billing chỉ bật khi đủ token + org id + ít nhất một cặp product/benefit; gói nào thiếu cặp ID thì không bán gói đó.
+Bucket quota: pro_week → `usage:<lk_id>:<ISO-YEAR>-W<ww>`; pro_month/pro_year → `usage:<lk_id>:<YYYY-MM>`.
+
+API thay đổi:
+- `GET /api/billing/plans` → `{"enabled","currency":"usd","plans":[{"id":"free",...},{"id":"pro_week","interval":"week","price":199,"chars":250000,"period":"week","available":true},{"id":"pro_month",...,"popular":true,"save_percent":37},{"id":"pro_year",...,"save_percent":17}]}` (giá cent từ Polar; đọc interval ở product.recurring_interval, rơi về price.recurring_interval).
+- `POST /api/billing/checkout {plan:"pro_week"|"pro_month"|"pro_year", email?}`; success_url = `PUBLIC_BASE_URL + "/checkout-success.html?checkout_id={CHECKOUT_ID}"`; return_url = `PUBLIC_BASE_URL + "/#pricing"`; metadata `{plan}`. `/thanh-toan.html` giữ lại làm trang chuyển hướng sang trang mới (giữ query).
+- `/api/me`, `/api/quota`: thêm `"period":"day"|"week"|"month"`.
+- **Thông báo lỗi song ngữ**: mọi `error.message` theo ngôn ngữ yêu cầu — header `Accept-Language` (vi* → tiếng Việt, còn lại → tiếng Anh; mặc định EN). Gom thông điệp vào một bảng `messages.py` (en/vi), có test đảm bảo mỗi code có đủ 2 ngôn ngữ.
+
+## Web (i18n)
+- Tiếng Anh mặc định. Ngôn ngữ chọn theo: `?lang=` > lựa chọn đã lưu (localStorage) > `navigator.language` bắt đầu bằng "vi" → vi > en. Nút chuyển EN | VI ở header mọi trang; đổi tại chỗ không tải lại; cập nhật `<html lang>`, `<title>`, meta description; gửi `Accept-Language` theo ngôn ngữ đang chọn.
+- Chuỗi giao diện trong `web/i18n.js` (`window.I18N = {en:{...}, vi:{...}}`, hàm `t(key, vars)`), phần tử tĩnh dùng `data-i18n`, `data-i18n-attr`. Test: mọi key có ở cả en và vi; không còn chuỗi tiếng Việt cứng trong app.js (trừ văn bản mẫu tiếng Việt để đọc).
+- Định dạng số/tiền/ngày qua `Intl` theo locale (en-US: 1,000,000 · $4.99; vi-VN: 1.000.000 · 4,99 US$). Quy đổi VND tham khảo chỉ hiện ở chế độ VI.
+- Nội dung EN viết tự nhiên kiểu SaaS quốc tế, ngắn gọn, không sáo rỗng. Hero EN gợi ý: "Natural Vietnamese voices, ready in seconds." Văn bản mẫu để đọc vẫn là tiếng Việt; ở EN có dòng gợi ý "Paste Vietnamese text — numbers, dates and currency are read the Vietnamese way." Mục sáu thanh điệu giải thích cho người không biết tiếng Việt (ma = ghost, mà = but, má = mother/cheek, mả = tomb, mã = horse/code, mạ = rice seedling).
+- Use cases toàn cầu: video localization to Vietnamese, e-learning & language learning, apps/IVR/games, audiobooks & podcasts for the Vietnamese diaspora, developers via API.
+- Bảng giá: toggle Weekly / Monthly / Yearly (mặc định Monthly), card Free + card Pro theo chu kỳ đang chọn, nhãn "Most popular" ở Monthly, "Save X%"; nút "Get Pro" → checkout. Billing tắt → "Coming soon" + waitlist.
+- Máy tính chi phí: USD; so sánh với "typical international TTS (~$16 / 1M chars)" và "human voice-over (~$6 / finished minute)" — ghi rõ là ước tính.
+- FAQ EN+VI: Polar là Merchant of Record (thuế/hoá đơn VAT theo nước khách), thẻ quốc tế/Apple Pay/Google Pay; khách VN: thẻ Visa/Mastercard quốc tế được, thẻ ATM nội địa Napas không; huỷ trong customer portal; key gửi qua email.
+- Trang pháp lý: bản tiếng Anh là chính `terms.html`, `privacy.html`, `refund.html`; bản tiếng Việt giữ ở `dieu-khoan.html`, `bao-mat.html`, `hoan-tien.html`; hai bản liên kết qua lại; nội dung cập nhật theo gói Pro tuần/tháng/năm (hoàn tiền: trong 14 ngày nếu dùng < 10% hạn mức của kỳ đầu; gói tuần: trong 3 ngày). Giữ placeholder tên pháp lý `[Legal name]` / `[Tên pháp lý]`.
+- `checkout-success.html` song ngữ.
+- SEO: `<link rel="alternate" hreflang>` không áp dụng được với một URL đổi ngôn ngữ phía client → chỉ cần meta description/OG tiếng Anh, `og:image` có thể bỏ; `canonical` https://dattts.com/.

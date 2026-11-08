@@ -20,7 +20,7 @@ và vài trang/endpoint riêng của bản giả:
     GET  /portal?token=…         "cổng khách hàng" HTML (xem key, nút huỷ gói → thu hồi key + gửi webhook)
     POST /_fake/webhook          gửi một webhook ĐÃ KÝ ĐÚNG tới DatTTS. Body JSON:
                                    {"type": "subscription.revoked",          # bắt buộc
-                                    "key": "DATTTS-PRO-MONTH-TEST",          # hoặc "customer_id": "…"
+                                    "key": "DATTTS-MONTH-TEST",          # hoặc "customer_id": "…"
                                     "revoke": true,                          # thu hồi key của khách trước khi gửi
                                     "data": {...},                           # ghi đè/ bổ sung payload.data
                                     "url": "http://…/api/billing/webhook",   # mặc định --webhook-url
@@ -29,12 +29,13 @@ và vài trang/endpoint riêng của bản giả:
     POST /_fake/revoke           {"key": "…"} thu hồi một key (không gửi webhook)
     POST /_fake/reset            đưa mọi thứ về dữ liệu mẫu ban đầu
     GET  /_fake/state            xem toàn bộ trạng thái (khách, key, phiên, webhook đã gửi)
-    GET  /_fake/outbox           "hộp thư" — email Polar lẽ ra gửi cho khách (kèm key mới cấp)
+    GET  /_fake/outbox           "hộp thư" — biên nhận Polar gửi khách; Polar THẬT không ghi key trong email (key nằm ở
+                                 cổng khách hàng, nút "Access purchase") — trường "key" chỉ để test lấy key mới cấp
 
 Dữ liệu mẫu (cố định, để điền env cho DatTTS — in ra bằng ``--print-env``):
-    key DATTTS-PRO-MONTH-TEST  → gói Pro tháng, khách an.nguyen@example.com
-    key DATTTS-PRO-YEAR-TEST   → gói Pro năm,   khách binh.tran@example.com
-    key DATTTS-PRO-WEEK-TEST   → gói Pro tuần,  khách chi.pham@example.com
+    key DATTTS-MONTH-TEST      → gói Pro tháng, khách an.nguyen@example.com
+    key DATTTS-YEAR-TEST       → gói Pro năm,   khách binh.tran@example.com
+    key DATTTS-WEEK-TEST       → gói Pro tuần,  khách chi.pham@example.com
     key DATTTS-REVOKED-TEST    → đã thu hồi (validate trả 404)
     sản phẩm Pro tuần $1.99/tuần, Pro tháng $4.99/tháng, Pro năm $49.99/năm (như Polar thật)
 
@@ -48,7 +49,7 @@ Rồi mở http://127.0.0.1:8765/#pricing → "Get Pro" → trang thanh toán gi
 → quay về /checkout-success.html báo thành công. Gửi webhook thử:
 
     curl -s -X POST http://127.0.0.1:8899/_fake/webhook -H 'Content-Type: application/json' \
-         -d '{"type":"subscription.revoked","key":"DATTTS-PRO-MONTH-TEST","revoke":true}'
+         -d '{"type":"subscription.revoked","key":"DATTTS-MONTH-TEST","revoke":true}'
 
 Chữ ký webhook theo Standard Webhooks: ``webhook-signature: v1,<base64(HMAC-SHA256(key, id.ts.body))>``
 với key = base64decode(secret bỏ "whsec_") (bí mật kiểu mới); ``--legacy-secret`` ký bằng utf-8 của cả
@@ -94,9 +95,9 @@ DEFAULT_TOKEN = "polar_oat_fake_dattts_local"
 DEFAULT_WEBHOOK_SECRET = "whsec_" + base64.b64encode(b"dattts-fake-polar-webhook-key-32").decode()
 
 TEST_KEYS = {
-    "DATTTS-PRO-MONTH-TEST": ("pro_month", CUSTOMER_PRO_MONTH, "granted"),
-    "DATTTS-PRO-YEAR-TEST": ("pro_year", CUSTOMER_PRO_YEAR, "granted"),
-    "DATTTS-PRO-WEEK-TEST": ("pro_week", CUSTOMER_PRO_WEEK, "granted"),
+    "DATTTS-MONTH-TEST": ("pro_month", CUSTOMER_PRO_MONTH, "granted"),
+    "DATTTS-YEAR-TEST": ("pro_year", CUSTOMER_PRO_YEAR, "granted"),
+    "DATTTS-WEEK-TEST": ("pro_week", CUSTOMER_PRO_WEEK, "granted"),
     "DATTTS-REVOKED-TEST": ("pro_month", CUSTOMER_REVOKED, "revoked"),
 }
 
@@ -416,7 +417,7 @@ def create_app(fp: FakePolar) -> FastAPI:
                 fp.state["keys"][new_key] = {"id": str(uuid.uuid4()), "key": new_key, "customer_id": cust["id"],
                                              "benefit_id": p["benefit"], "status": "granted", "created_at": _iso()}
                 co.update(status="succeeded", customer_id=cust["id"], customer_email=email)
-                fp.state["outbox"].append({"to": email, "at": _iso(), "subject": f"Your {p['name']} license key",
+                fp.state["outbox"].append({"to": email, "at": _iso(), "subject": f"Your {p['name']} receipt (Access purchase → customer portal)",
                                            "key": new_key, "checkout_id": checkout_id})
         if new_key and fp.auto_webhooks and fp.webhook_url:
             cust_id = co["customer_id"]

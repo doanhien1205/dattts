@@ -1,4 +1,5 @@
-// Kiểm thử đầu-cuối DatTTS với máy chủ thật (engine VieNeu).
+// Kiểm thử đầu-cuối DatTTS với máy chủ thật (engine VieNeu). Giao diện mặc định tiếng Anh (trình duyệt en-US),
+// có kiểm tra nút chuyển EN | VI, ?lang=, locale vi-VN và header Accept-Language.
 //   cd backend && python server_local.py --port 8765 &
 //   node scripts/e2e.mjs                      # E2E_BASE mặc định http://127.0.0.1:8765
 // Biến môi trường: E2E_BASE, E2E_OUT (ghi danh sách id file đã tạo ra JSON), E2E_SHOTS (thư mục ảnh chụp).
@@ -23,8 +24,8 @@ async function step(name, fn) {
   try { await fn(); } catch (e) { check(name + ' (ngoại lệ)', false, String(e && e.message || e).split('\n')[0]); }
 }
 
-async function newPage(browser, { viewport = { width: 1280, height: 900 }, scheme = 'light' } = {}) {
-  const ctx = await browser.newContext({ viewport, colorScheme: scheme, acceptDownloads: true });
+async function newPage(browser, { viewport = { width: 1280, height: 900 }, scheme = 'light', locale = 'en-US' } = {}) {
+  const ctx = await browser.newContext({ viewport, colorScheme: scheme, acceptDownloads: true, locale });
   // Phông Google có thể bị chặn trong môi trường kiểm thử; trả rỗng để khỏi nhiễu console.
   await ctx.route(/fonts\.(googleapis|gstatic)\.com/, r => r.fulfill({ status: 200, contentType: 'text/css', body: '' }));
   // Ghi lại mọi src được phát (kể cả new Audio() không gắn vào DOM).
@@ -38,7 +39,7 @@ async function newPage(browser, { viewport = { width: 1280, height: 900 }, schem
   page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', e => errors.push('pageerror: ' + e.message));
   const reqs = [];
-  page.on('request', r => { if (r.url().includes('/api/')) reqs.push({ url: r.url(), method: r.method(), body: r.postData() }); });
+  page.on('request', r => { if (r.url().includes('/api/')) reqs.push({ url: r.url(), method: r.method(), body: r.postData(), lang: r.headers()['accept-language'] }); });
   return { ctx, page, errors, reqs };
 }
 const getJSON = async (page, path) => page.evaluate(async p => (await fetch(p)).json(), path);
@@ -63,6 +64,9 @@ async function main(browser) {
     check('trang tải 200', r && r.status() === 200, String(r && r.status()));
     await page.waitForSelector('.vcard', { timeout: 20000 });
     check('không có banner ngoại tuyến', await page.isHidden('#offlineBanner'));
+    check('mặc định tiếng Anh (en-US): <html lang="en">, nút "Generate voice"', (await page.getAttribute('html', 'lang')) === 'en' && (await page.textContent('#genLabel')).trim() === 'Generate voice', await page.textContent('#genLabel'));
+    check('hero tiếng Anh', /Natural Vietnamese voices/.test(await page.textContent('h1')), (await page.textContent('h1')).trim());
+    check('văn bản mẫu vẫn là tiếng Việt', /Xin chào/.test(await page.inputValue('#txt')));
   });
 
   await step('25 giọng', async () => {
@@ -140,8 +144,9 @@ async function main(browser) {
     const q = await getJSON(page, '/api/quota');
     check('quota used tăng sau khi tạo', quotaBefore && q.used > quotaBefore.used, `${quotaBefore && quotaBefore.used} → ${q.used}`);
     check('remaining = limit − used', q.limit == null || q.remaining === q.limit - q.used, JSON.stringify(q));
+    check('/api/quota period=day', q.period === 'day', q.period);
     const shown = await page.textContent('#quotaText');
-    check('giao diện hiện quota', /còn/.test(shown || ''), (shown || '').trim());
+    check('giao diện hiện quota (EN, số kiểu 1,000)', /characters left today/.test(shown || '') && shown.includes(q.remaining.toLocaleString('en-US')), (shown || '').trim());
   });
 
   await step('nhiều giọng', async () => {
@@ -188,7 +193,7 @@ async function main(browser) {
     let long = `Bản thử số ${Date.now() % 100000}.\n\n`; let i = 1;
     while (long.length < 3300) { long += `Đoạn ${i}. ` + parts[i % parts.length] + ' ' + parts[(i + 2) % parts.length] + '\n\n'; i++; }
     await page.fill('#txt', long);
-    check('chế độ chạy nền hiển thị', /chạy nền/.test(await page.textContent('#mode')), (await page.textContent('#mode')).trim());
+    check('chế độ chạy nền hiển thị', /runs in background/.test(await page.textContent('#mode')), (await page.textContent('#mode')).trim());
     const before = reqs.length;
     const jobRespP = page.waitForResponse(r => r.url().endsWith('/api/jobs') && r.request().method() === 'POST', { timeout: 30000 });
     await page.click('#genBtn');
@@ -218,21 +223,65 @@ async function main(browser) {
     // Billing bật (có POLAR_ACCESS_TOKEN) thì nút mua dẫn sang Polar, form chờ ẩn — phần đó do e2e_billing.mjs kiểm.
     const plans = await getJSON(page, '/api/billing/plans').catch(() => ({}));
     if (plans.enabled) {
-      check('billing bật: nút "Mua gói" thay cho form chờ', /Mua gói/.test(await page.textContent('[data-buy="unlimited"] .lbl')) && await page.isHidden('#waitlist'));
+      check('billing bật: nút "Get Pro" thay cho form chờ', /Get Pro/.test(await page.textContent('#buyPro .lbl')) && await page.isHidden('#waitlist'));
       return;
     }
-    await page.click('[data-plan="khong-gioi-han"]');
+    await page.waitForFunction(() => /Coming soon/.test(document.querySelector('#buyPro .lbl').textContent), null, { timeout: 10000 });
+    check('billing tắt: nút "Coming soon"', true, (await page.textContent('#buyPro .lbl')).trim());
+    await page.click('#cycle label:has(input[value="year"])');
+    await page.click('#buyPro');
+    check('bấm "Coming soon" → chọn Pro năm trong form chờ', (await page.inputValue('#wlPlan')) === 'pro_year');
     const email = `e2e-${Date.now()}@example.vn`;
     await page.fill('#wlEmail', email);
     await page.click('#wlBtn');
     await page.waitForSelector('#wlMsg.ok', { timeout: 10000 });
-    check('đăng ký chờ thành công', /người thứ \d+/.test(await page.textContent('#wlMsg')), (await page.textContent('#wlMsg')).trim());
+    check('đăng ký chờ thành công', /#\d+ on the waitlist/.test(await page.textContent('#wlMsg')), (await page.textContent('#wlMsg')).trim());
+  });
+
+  await step('chuyển EN | VI tại chỗ', async () => {
+    const before = reqs.length;
+    await page.click('[data-lang="vi"]');
+    await page.waitForFunction(() => document.documentElement.lang === 'vi', null, { timeout: 5000 });
+    check('VI: nút "Tạo giọng đọc", không tải lại trang', (await page.textContent('#genLabel')).trim() === 'Tạo giọng đọc' && (await page.$$('#transcript .seg')).length > 0);
+    check('VI: <title> + meta description đổi', /[ạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹđ]/i.test((await page.title()) + (await page.getAttribute('meta[name="description"]', 'content'))), await page.title());
+    await page.waitForFunction(() => /ký tự/.test(document.querySelector('#quotaText').textContent), null, { timeout: 5000 }).catch(() => {});
+    const qt = (await page.textContent('#quotaText')).trim();
+    check('VI: quota tiếng Việt, số kiểu 1.000', /Hôm nay còn/.test(qt) && /\d\.\d{3}/.test(qt), qt);
+    await page.click('.vcard[data-id="truc-ly"] .vpick');
+    const { status } = await generate(page, 'Xin chào, đây là bản thử song ngữ.');
+    const sent = reqs.slice(before).filter(r => r.url.endsWith('/api/tts'));
+    check('VI: request /api gửi Accept-Language: vi', status === 200 && sent.length && sent.every(r => r.lang === 'vi'), sent.map(r => r.lang).join(','));
+    check('VI: lưu lựa chọn', (await page.evaluate(() => localStorage.getItem('dattts.lang'))) === 'vi');
+    await page.click('[data-lang="en"]');
+    await page.waitForFunction(() => document.documentElement.lang === 'en', null, { timeout: 5000 });
+    check('EN lại: nút "Generate voice"', (await page.textContent('#genLabel')).trim() === 'Generate voice');
   });
 
   if (SHOTS) await page.screenshot({ path: SHOTS + '/e2e-desktop.png', fullPage: false }).catch(() => {});
   const errs = errors.filter(e => !/favicon/.test(e));
   check('không có lỗi console (desktop)', errs.length === 0, errs.join(' | '));
   await ctx.close();
+}
+
+async function langDetect(browser) {
+  await step('chọn ngôn ngữ tự động', async () => {
+    let { ctx, page, errors } = await newPage(browser, { locale: 'vi-VN' });
+    await page.goto(BASE + '/');
+    await page.waitForSelector('.vcard', { timeout: 20000 });
+    check('locale vi-VN → giao diện VI', (await page.getAttribute('html', 'lang')) === 'vi' && (await page.textContent('#genLabel')).trim() === 'Tạo giọng đọc');
+    await page.goto(BASE + '/?lang=en');
+    await page.waitForSelector('.vcard', { timeout: 20000 });
+    check('?lang=en thắng locale vi-VN', (await page.getAttribute('html', 'lang')) === 'en');
+    check('không có lỗi console (vi-VN)', errors.length === 0, errors.join(' | '));
+    await ctx.close();
+    ({ ctx, page, errors } = await newPage(browser));
+    await page.goto(BASE + '/?lang=vi#bang-gia');
+    await page.waitForSelector('.vcard', { timeout: 20000 });
+    check('?lang=vi trên trình duyệt en-US → VI', (await page.getAttribute('html', 'lang')) === 'vi');
+    await page.waitForTimeout(300);
+    check('neo cũ #bang-gia → #pricing', page.url().endsWith('#pricing'), page.url());
+    await ctx.close();
+  });
 }
 
 async function mobileDark(browser) {
@@ -271,6 +320,7 @@ try {
   const h = await fetch(BASE + '/api/health').then(r => r.json());
   check('/api/health ok, engine thật', h.ok && h.engine === 'vieneu-v3-turbo' && h.voices === 25, JSON.stringify(h));
   await main(browser);
+  await langDetect(browser);
   await mobileDark(browser);
 } catch (e) { check('ngoại lệ', false, String(e && e.stack || e)); }
 await browser.close();

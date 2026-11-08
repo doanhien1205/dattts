@@ -521,13 +521,14 @@ def run_job(store, job_id: str, req: RenderRequest, render_fn: Callable[..., dic
         cur["total"] = cur.get("total") or 1
         cur["done"] = cur["total"]
     qk, charged = cur.get("quota_key"), int(cur.get("charged") or 0)
+    from .billing import adjust_quota  # muộn: tránh import vòng; cập nhật cả sổ cái của key Polar
     try:
         if cur["status"] == "error" and qk and charged and not cur.get("refunded"):
-            store.kv_incr(qk, -charged)
+            adjust_quota(store, qk, -charged)
             cur["refunded"] = True
         elif cur["status"] == "done" and qk and charged and cur.get("refunded"):
             # API đã hoàn quota vì tưởng job hỏng, nhưng job vẫn xong → tính lại cho đúng.
-            store.kv_incr(qk, charged)
+            adjust_quota(store, qk, charged)
             cur["refunded"] = False
     except Exception:  # pragma: no cover
         log.exception("không cập nhật được quota cho job %s", job_id)

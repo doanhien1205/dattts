@@ -51,6 +51,18 @@ def voice_id_from_name(name: str) -> str:
     return s
 
 
+_REGION_WORDS = {"Bắc", "Trung", "Nam"}
+
+
+def _vi_description(desc: str) -> str:
+    """"Nữ · Nam · Phong cách tin tức" → "Nữ · miền Nam · …": "Nam" đứng một mình dễ đọc thành giới tính."""
+    parts = [p.strip() for p in str(desc or "").split("·")]
+    if len(parts) >= 2 and parts[1] in _REGION_WORDS:
+        parts[1] = "miền " + parts[1]
+        return " · ".join(parts)
+    return str(desc or "")
+
+
 def _voice_entry(name: str, meta: dict, order: int) -> dict:
     style = meta.get("style") or "tu_nhien"
     featured = meta.get("featured")
@@ -66,7 +78,7 @@ def _voice_entry(name: str, meta: dict, order: int) -> dict:
         "style": style,
         "style_label": STYLE_LABELS.get(style, style),
         "featured": featured,
-        "description": meta.get("description") or "",
+        "description": _vi_description(meta.get("description") or ""),
         "_order": order,
         "_aliases": list(meta.get("aliases") or []),
     }

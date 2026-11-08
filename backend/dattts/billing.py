@@ -70,8 +70,19 @@ CHECKOUT_ID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9
 LK_POSITIVE_TTL = 600
 LK_NEGATIVE_TTL = 60
 LK_STALE_MAX = 24 * 3600
+# Bị giới hạn tần suất (on_miss chặn) thì chỉ dùng cache cũ trong khoảng ngắn này: giới hạn đếm theo IP và
+# người cầm key bị lộ có thể cố tình kích hoạt nó (gửi key rác) để key cũ đã đổi (rotate) sống tiếp.
+# Polar lỗi thật thì vẫn dùng tới LK_STALE_MAX.
+LK_RATE_LIMITED_STALE_MAX = 15 * 60
 PLANS_TTL = 600
 PLANS_ERROR_TTL = 60
+
+# Sổ cái dùng ký tự lâu dài theo license key (bằng chứng cho chính sách hoàn tiền "< 10 %" và chống mất
+# quota giữa kỳ khi mục KV hết hạn — modal.Dict xoá mục sau 7 ngày không dùng). Sao lưu thêm vào blob.
+LEDGER_DAYS_MAX = 400
+LEDGER_PERIODS_MAX = 60
+_SAFE_ID_RE = re.compile(r"[A-Za-z0-9-]{1,100}")
+DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 EVENTS_KEY = "billing_events"
 EVENTS_MAX = 500
@@ -80,7 +91,11 @@ INVALIDATING_EVENTS = frozenset({
     "subscription.revoked",
     "subscription.updated",
     "benefit_grant.revoked",
+    "benefit_grant.updated",   # đổi (rotate) license key / cấp lại quyền
     "customer.state_changed",
+    "order.refunded",          # hoàn tiền: buộc hỏi lại Polar ngay (key bị thu hồi nếu chủ shop revoke)
+    "refund.created",
+    "refund.updated",
 })
 
 
@@ -157,18 +172,18 @@ def period_reset_at(period: str, now: float | None = None) -> datetime:
 
 
 def save_percent(price: int | None, ref_price: int | None, ref_count: int) -> int | None:
-    """Phần trăm tiết kiệm so với mua ``ref_count`` kỳ của gói tham chiếu, làm tròn tới số nguyên gần nhất
-    (0,5 làm tròn lên). Không đủ dữ liệu hoặc không rẻ hơn → None.
+    """Phần trăm tiết kiệm so với mua ``ref_count`` kỳ của gói tham chiếu, LÀM TRÒN XUỐNG (SPEC Phần 3:
+    không bao giờ quảng cáo mức tiết kiệm cao hơn thực tế). Không đủ dữ liệu hoặc không rẻ hơn → None.
 
-    4,99 so với 4 × 1,99 → 37 (37,31 %); 49,99 so với 12 × 4,99 → 17 (16,52 %).
+    4,99 so với 4 × 1,99 → 37 (37,31 %); 49,99 so với 12 × 4,99 → 16 (16,52 %).
     """
     if price is None or ref_price is None or ref_count <= 0:
         return None
     full = int(ref_price) * int(ref_count)
     if full <= 0 or price >= full:
         return None
-    # Số học nguyên (không lỗi làm tròn số thực): round_half_up(100 * (full - price) / full)
-    pct = (200 * (full - int(price)) + full) // (2 * full)
+    # Số học nguyên (không lỗi làm tròn số thực): floor(100 * (full - price) / full)
+    pct = 100 * (full - int(price)) // full
     return int(pct) if pct > 0 else None
 
 
@@ -389,6 +404,127 @@ def _index_customer(store, customer_id: str, h: str) -> None:
     _kv_update(store, ik, add)
 
 
+def _safe_id(x: str) -> str:
+    x = str(x or "")
+    return x if _SAFE_ID_RE.fullmatch(x) else hashlib.sha256(x.encode("utf-8")).hexdigest()[:40]
+
+
+def ledger_key(license_key_id: str) -> str:
+    return f"ledger:{license_key_id}"
+
+
+def ledger_blob(license_key_id: str) -> str:
+    return f"ledger-{_safe_id(license_key_id)}.json"
+
+
+def ledger_customer_key(customer_id: str) -> str:
+    return f"ledger_cust:{customer_id}"
+
+
+def ledger_customer_blob(customer_id: str) -> str:
+    return f"ledger-c-{_safe_id(customer_id)}.json"
+
+
+def _blob_json(store, name: str) -> Any:
+    try:
+        raw = store.blob_get(name)
+        return json.loads(raw) if raw else None
+    except Exception:  # pragma: no cover — blob hỏng/không đọc được
+        log.exception("không đọc được blob %s", name)
+        return None
+
+
+def _blob_put_json(store, name: str, value: Any) -> None:
+    try:
+        store.blob_put(name, json.dumps(value, ensure_ascii=False, sort_keys=True).encode("utf-8"))
+    except Exception:  # pragma: no cover
+        log.exception("không sao lưu được %s", name)
+
+
+def _apply_delta(counts: dict, key: str, delta: int, keep: int) -> dict:
+    """Cộng ``delta`` vào ``counts[key]``; delta âm (hoàn quota) trừ dần từ mục mới nhất, không xuống dưới 0."""
+    counts = {k: int(v) for k, v in (counts or {}).items()}
+    if delta >= 0:
+        counts[key] = counts.get(key, 0) + delta
+    else:
+        need = -delta
+        for k in ([key] if key in counts else []) + [k for k in sorted(counts, reverse=True) if k != key]:
+            take = min(need, counts[k])
+            counts[k] -= take
+            need -= take
+            if not need:
+                break
+    return {k: counts[k] for k in sorted(counts)[-keep:]}
+
+
+def load_ledger(store, license_key_id: str) -> dict | None:
+    """Sổ cái của một key (KV; KV mất/hết hạn → khôi phục từ blob)."""
+    cur = store.kv_get(ledger_key(license_key_id))
+    if isinstance(cur, dict):
+        return cur
+    cur = _blob_json(store, ledger_blob(license_key_id))
+    if isinstance(cur, dict) and cur.get("license_key_id") == license_key_id:
+        return cur
+    return None
+
+
+def ledger_add(store, lkid: str | None, bucket: str, delta: int, now: float | None, plan: str | None = None,
+                customer_id: str | None = None) -> None:
+    if not lkid or not delta:
+        return
+    try:
+        d = _now_vn(now)
+        at, day = d.isoformat(timespec="seconds"), f"{d:%Y-%m-%d}"
+        k = ledger_key(lkid)
+        restored = load_ledger(store, lkid) if store.kv_get(k) is None else None
+
+        def upd(cur):
+            cur = dict(cur if isinstance(cur, dict) else (restored or {}))
+            if not cur:
+                cur = {"license_key_id": lkid, "first_at": at, "total": 0, "days": {}, "periods": {}}
+            cur["license_key_id"] = lkid
+            if customer_id:
+                cur["customer_id"] = customer_id
+            if plan:
+                cur["plan"] = plan
+            cur["last_at"] = at
+            cur["total"] = max(0, int(cur.get("total") or 0) + delta)
+            cur["days"] = _apply_delta(cur.get("days") or {}, day, delta, LEDGER_DAYS_MAX)
+            cur["periods"] = _apply_delta(cur.get("periods") or {}, bucket, delta, LEDGER_PERIODS_MAX)
+            return cur
+
+        new = _kv_update(store, k, upd)
+        _blob_put_json(store, ledger_blob(lkid), new)
+        cid = new.get("customer_id")
+        if cid:
+            ck = ledger_customer_key(cid)
+            lst = store.kv_get(ck)
+            if lst is None:
+                lst = _blob_json(store, ledger_customer_blob(cid))
+            if not isinstance(lst, list) or lkid not in lst:
+                seed = lst if isinstance(lst, list) else []
+                lst = _kv_update(store, ck,
+                                 lambda cur: (lambda l: l if lkid in l else (l + [lkid])[-200:])(
+                                     list(cur if isinstance(cur, list) else seed)))
+                _blob_put_json(store, ledger_customer_blob(cid), lst)
+    except Exception:  # pragma: no cover — sổ cái lỗi không được làm hỏng lượt tạo giọng đã trả tiền
+        log.exception("không ghi được sổ cái dùng ký tự của %s", lkid)
+
+
+_BUCKET_RE = re.compile(r"^\d{4}-(\d{2}|W\d{2})$")
+
+
+def adjust_quota(store, qk: str | None, delta: int, now: float | None = None) -> None:
+    """Cộng/trừ quota đã trừ trước (hoàn khi job lỗi, tính lại khi job vẫn xong). Khoá
+    ``usage:<license_key_id>:<kỳ>`` của key Polar → cập nhật cả sổ cái lâu dài."""
+    if not qk or not delta:
+        return
+    store.kv_incr(qk, int(delta))
+    parts = qk.split(":")
+    if len(parts) == 3 and parts[0] == "usage" and _BUCKET_RE.fullmatch(parts[2]):
+        ledger_add(store, parts[1], parts[2], int(delta), now)
+
+
 def _kv_delete(store, key: str) -> None:
     fn = getattr(store, "kv_delete", None)
     if fn is not None:
@@ -419,14 +555,17 @@ def resolve_api_key(key: str, settings, store, client: PolarClient | None, now: 
     h = key_hash(key)
     ck = f"lk:{h}"
     cached = store.kv_get(ck)
+    if isinstance(cached, dict) and cached.get("ok") and (cached.get("info") or {}).get("plan") not in PAID_PLANS:
+        cached = None  # bộ đệm từ gói đã bỏ (personal/unlimited) → hỏi lại Polar
     if isinstance(cached, dict) and t < float(cached.get("exp") or 0):
         return _cached_result(cached)
-    stale_ok = isinstance(cached, dict) and t - float(cached.get("at") or 0) <= LK_STALE_MAX
+    age = t - float(cached.get("at") or 0) if isinstance(cached, dict) else None
+    stale_ok = age is not None and age <= LK_STALE_MAX
     if on_miss is not None:
         try:
             on_miss()
         except BillingError:
-            if stale_ok:
+            if age is not None and age <= LK_RATE_LIMITED_STALE_MAX:
                 return _cached_result(cached)
             raise
     try:
@@ -482,9 +621,11 @@ class Billing:
         self._lock = threading.Lock()
         missing = settings.billing_missing()
         if missing:
-            log.error("Cấu hình Polar thiếu %s — %s", ", ".join(missing),
-                      "các gói thiếu sản phẩm/benefit sẽ không bán" if settings.billing_enabled
+            effect = ("các gói thiếu sản phẩm/benefit sẽ không bán" if settings.billing_enabled
                       else "billing TẮT (không bán gói nào) cho tới khi đặt đủ biến")
+            if "POLAR_WEBHOOK_SECRET" in missing:
+                effect += "; mọi webhook Polar bị từ chối (503) nên thu hồi key không có hiệu lực ngay"
+            log.error("Cấu hình Polar thiếu %s — %s", ", ".join(missing), effect)
 
     @property
     def enabled(self) -> bool:
@@ -507,14 +648,18 @@ class Billing:
         return self.settings.polar_product(plan)
 
     def _price(self, plan: str) -> dict:
+        """Giá của gói từ Polar. ``sellable`` False khi sản phẩm đã lưu trữ (archived) hoặc không có giá cố định
+        → gói không bán (checkout chắc chắn bị Polar từ chối)."""
         default_interval = PLAN_INTERVALS.get(plan)
-        empty = {"price": None, "currency": "usd", "interval": default_interval, "interval_count": 1}
+        empty = {"price": None, "currency": "usd", "interval": default_interval, "interval_count": 1,
+                 "sellable": True}
         product_id = self.product_id(plan)
         if not product_id or not self.enabled or not self.settings.polar_plan_configured(plan):
             return empty
         p = self.client.get_product(product_id)
         if p.get("is_archived"):
-            return empty
+            log.error("sản phẩm Polar của gói %s đã bị lưu trữ (archived) — gói không bán", plan)
+            return {**empty, "sellable": False}
         for pr in p.get("prices") or []:
             if not isinstance(pr, dict) or pr.get("is_archived") or pr.get("amount_type") != "fixed":
                 continue
@@ -523,8 +668,9 @@ class Billing:
             return {"price": int(pr.get("price_amount") or 0),
                     "currency": str(pr.get("price_currency") or "usd").lower(),
                     "interval": p.get("recurring_interval") or pr.get("recurring_interval") or default_interval,
-                    "interval_count": int(p.get("recurring_interval_count") or 1)}
-        return empty
+                    "interval_count": int(p.get("recurring_interval_count") or 1), "sellable": True}
+        log.error("sản phẩm Polar của gói %s không có giá cố định còn hiệu lực — gói không bán", plan)
+        return {**empty, "sellable": False}
 
     def _plans_data(self, now: float | None = None) -> dict:
         t = time.time() if now is None else now
@@ -540,10 +686,12 @@ class Billing:
             except PolarError as e:
                 log.warning("không lấy được giá gói %s: %s", plan, e)
                 failed = True
+                # Lỗi tạm thời: vẫn bán (giá hiện ở trang thanh toán), cache ngắn PLANS_ERROR_TTL.
                 price = {"price": None, "currency": "usd", "interval": PLAN_INTERVALS.get(plan),
-                         "interval_count": 1}
+                         "interval_count": 1, "sellable": True}
+            sellable = price.pop("sellable", True)
             paid[plan] = {"id": plan, **price, "chars": self.plan_limit(plan), "period": self.plan_period(plan),
-                          "available": bool(self.enabled and self.settings.polar_plan_configured(plan)),
+                          "available": bool(self.enabled and self.settings.polar_plan_configured(plan) and sellable),
                           "popular": plan == POPULAR_PLAN, "save_percent": None}
         for plan, (ref, count) in SAVE_REFERENCE.items():
             cur, base = paid.get(plan), paid.get(ref)
@@ -556,6 +704,15 @@ class Billing:
         with self._lock:
             self._plans_cache = {"data": data, "exp": t + (PLANS_ERROR_TTL if failed else PLANS_TTL)}
         return data
+
+    def _plan_sellable(self, plan: str) -> bool:
+        """Theo bảng giá đang cache (không gọi Polar): False chỉ khi đã biết chắc gói không bán được."""
+        with self._lock:
+            c = self._plans_cache
+            data = c.get("data") if c and time.time() < c["exp"] else None
+        if not data:
+            return True
+        return next((bool(p.get("available")) for p in data["plans"] if p["id"] == plan), True)
 
     def plans(self, lang: str = DEFAULT_LANG, now: float | None = None) -> dict:
         """Bảng giá (giá thật từ Polar, cache 10 phút; lỗi → ``price: null``). ``name`` theo ngôn ngữ."""
@@ -571,6 +728,8 @@ class Billing:
             raise BillingError("bad_plan", status=400)
         product = self.product_id(plan)
         if not product or not self.settings.polar_plan_configured(plan):
+            raise BillingError("billing_disabled", status=503, key="billing_disabled.plan")
+        if not self._plan_sellable(plan):  # sản phẩm đã lưu trữ / không có giá → đừng gửi sang Polar
             raise BillingError("billing_disabled", status=503, key="billing_disabled.plan")
         base = self.settings.public_base
         try:
@@ -632,7 +791,7 @@ class Billing:
 
     def usage(self, who: dict, now: float | None = None) -> dict:
         period = self.plan_period(who["plan"])
-        used = int(self.store.kv_get(self.usage_key(who["license_key_id"], period_id(period, now))) or 0)
+        used = self._period_used(who["license_key_id"], period_id(period, now))
         limit = self.plan_limit(who["plan"])
         return {"used": used, "limit": limit, "remaining": max(0, limit - used),
                 "reset_at": period_reset_at(period, now).isoformat(), "plan": who["plan"], "period": period}
@@ -643,6 +802,11 @@ class Billing:
         bucket = period_id(period, now)
         uk = self.usage_key(who["license_key_id"], bucket)
         limit = self.plan_limit(who["plan"])
+        if self.store.kv_get(uk) is None:
+            # Bucket KV hết hạn giữa kỳ (7 ngày không dùng trên Modal) → nạp lại từ sổ cái, không reset quota.
+            seed = self._period_used(who["license_key_id"], bucket)
+            if seed:
+                _kv_update(self.store, uk, lambda cur: cur if cur is not None else seed)
         new = self.store.kv_incr(uk, chars)
         if new > limit:
             self.store.kv_incr(uk, -chars)
@@ -654,7 +818,57 @@ class Billing:
             raise BillingError("quota_exceeded", status=429, key="quota_exceeded.paid_partial",
                                params={**params, "remaining": remaining, "chars": int(chars)})
         self._track_usage_key(bucket, who)
+        self._ledger_add(who.get("license_key_id"), bucket, int(chars), now, plan=who.get("plan"),
+                         customer_id=who.get("customer_id"))
         return uk
+
+    def refund(self, uk: str, chars: int, now: float | None = None) -> None:
+        """Hoàn quota đã trừ bằng ``charge`` (job lỗi): trả lại cả bucket kỳ lẫn sổ cái."""
+        adjust_quota(self.store, uk, -int(chars or 0), now)
+
+    # ---------- sổ cái lâu dài ----------
+    def ledger(self, license_key_id: str) -> dict | None:
+        return load_ledger(self.store, license_key_id)
+
+    def _ledger_add(self, lkid: str | None, bucket: str, delta: int, now: float | None, plan: str | None = None,
+                    customer_id: str | None = None) -> None:
+        ledger_add(self.store, lkid, bucket, delta, now, plan=plan, customer_id=customer_id)
+
+    def _period_used(self, lkid: str, bucket: str) -> int:
+        """Số ký tự đã dùng trong kỳ: bucket KV, KV mất/hết hạn → lấy từ sổ cái (không reset giữa kỳ)."""
+        v = self.store.kv_get(self.usage_key(lkid, bucket))
+        if v is not None:
+            return int(v)
+        led = self.ledger(lkid) or {}
+        return int((led.get("periods") or {}).get(bucket) or 0)
+
+    def admin_usage(self, license_key_id: str | None = None, customer_id: str | None = None,
+                    since: str | None = None) -> dict:
+        """Tra cứu sổ cái theo key hoặc khách. ``since`` (YYYY-MM-DD, giờ VN, thường là ngày thanh toán) →
+        ``used_since`` = ký tự đã dùng từ ngày đó; ``percent_of_period`` so với hạn mức MỘT kỳ của gói."""
+        if since is not None and not DATE_RE.fullmatch(since):
+            raise BillingError("bad_request", status=400)
+        if license_key_id:
+            ids = [license_key_id]
+        elif customer_id:
+            lst = self.store.kv_get(ledger_customer_key(customer_id))
+            if lst is None:
+                lst = _blob_json(self.store, ledger_customer_blob(customer_id))
+            ids = list(lst) if isinstance(lst, list) else []
+        else:
+            raise BillingError("bad_request", status=400)
+        keys = []
+        for lkid in ids:
+            led = self.ledger(str(lkid))
+            if not led:
+                continue
+            days = {k: int(v) for k, v in (led.get("days") or {}).items()}
+            used = sum(v for k, v in days.items() if k >= since) if since else int(led.get("total") or 0)
+            limit = self.plan_limit(led.get("plan") or "")
+            keys.append({**led, "since": since or (str(led.get("first_at") or "")[:10] or None),
+                         "used_since": used, "period_limit": limit or None,
+                         "percent_of_period": round(100 * used / limit, 2) if limit else None})
+        return {"license_key_id": license_key_id, "customer_id": customer_id, "keys": keys}
 
     def _track_usage_key(self, bucket: str, who: dict) -> None:
         """Chỉ mục ``usage_keys:<kỳ>`` → {license_key_id: plan} để admin cộng tổng theo gói."""

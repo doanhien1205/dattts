@@ -193,7 +193,7 @@ class LocalRenderer  # engine trong tiến trình + ThreadPoolExecutor(1)
 # Phần 2 — Thanh toán qua Polar (polar.sh, Merchant of Record) — thay cho VietQR
 
 Polar là bên bán hàng chính thức (MoR): thu tiền thẻ quốc tế/Apple Pay/Google Pay, lo thuế, trả tiền về Stripe Connect Express (Việt Nam được hỗ trợ). Giá niêm yết bằng USD.
-Không tự xây hệ thống tài khoản: **API key của khách = License Key do Polar cấp** (benefit "License Keys", prefix `DATTTS`), gắn vào mỗi sản phẩm gói. Khách nhận key qua email của Polar và xem/xoay key trong cổng khách hàng Polar. Hết gói → Polar tự thu hồi key.
+Không tự xây hệ thống tài khoản: **API key của khách = License Key do Polar cấp** (benefit "License Keys", prefix `DATTTS`), gắn vào mỗi sản phẩm gói. Khách nhận email biên nhận của Polar (nút "Access purchase") và xem/chép/xoay key trong cổng khách hàng Polar (Polar không gửi key trong email). Hết gói → Polar tự thu hồi key.
 
 ## Cấu hình (env, trong Modal secret `dattts`)
 | Biến | Ý nghĩa |
@@ -255,7 +255,7 @@ def verify_webhook(body: bytes, headers, secret: str, tolerance=300) -> bool
 | free | — | — | $0 | 20,000 ký tự / ngày / IP (như cũ) |
 | pro_week | 3d54ccce-5b59-4903-a23b-18fd8c9e6fe1 | e02132d4-8b7c-4779-a271-cf778cada689 | $1.99 / tuần | 250,000 ký tự / tuần (tuần ISO theo giờ VN, reset thứ Hai 00:00 UTC+7) |
 | pro_month | 5cdb0d3a-edf1-46aa-ba4f-b1e4303e60bf | de10e5c4-5357-4ec8-81ca-5b2848226ac0 | $4.99 / tháng — "Most popular", "Save 37%" so với 4 × $1.99 | 1,000,000 ký tự / tháng |
-| pro_year | 673f4798-5c0b-4a6f-a6bc-002054bcd621 | 170cee60-1cd2-428e-8e46-a50e753189fb | $49.99 / năm — "Save 17%" so với 12 × $4.99 | 1,000,000 ký tự / tháng |
+| pro_year | 673f4798-5c0b-4a6f-a6bc-002054bcd621 | 170cee60-1cd2-428e-8e46-a50e753189fb | $49.99 / năm — "Save 16%" so với 12 × $4.99 (16,52 % làm tròn xuống; bản đầu ghi nhầm 17%) | 1,000,000 ký tự / tháng |
 Organization id: cd16dd37-dd25-4e92-aaaa-23509784d129. Tất cả gói Pro có cùng tính năng (25 giọng, MP3/WAV/OGG, SRT/VTT, nhiều giọng, API, dùng thương mại); chỉ khác chu kỳ.
 Phần trăm "Save" tính từ giá thật lấy từ Polar (làm tròn xuống), không hard-code.
 
@@ -265,7 +265,7 @@ Billing chỉ bật khi đủ token + org id + ít nhất một cặp product/be
 Bucket quota: pro_week → `usage:<lk_id>:<ISO-YEAR>-W<ww>`; pro_month/pro_year → `usage:<lk_id>:<YYYY-MM>`.
 
 API thay đổi:
-- `GET /api/billing/plans` → `{"enabled","currency":"usd","plans":[{"id":"free",...},{"id":"pro_week","interval":"week","price":199,"chars":250000,"period":"week","available":true},{"id":"pro_month",...,"popular":true,"save_percent":37},{"id":"pro_year",...,"save_percent":17}]}` (giá cent từ Polar; đọc interval ở product.recurring_interval, rơi về price.recurring_interval).
+- `GET /api/billing/plans` → `{"enabled","currency":"usd","plans":[{"id":"free",...},{"id":"pro_week","interval":"week","price":199,"chars":250000,"period":"week","available":true},{"id":"pro_month",...,"popular":true,"save_percent":37},{"id":"pro_year",...,"save_percent":16}]}` (giá cent từ Polar; đọc interval ở product.recurring_interval, rơi về price.recurring_interval).
 - `POST /api/billing/checkout {plan:"pro_week"|"pro_month"|"pro_year", email?}`; success_url = `PUBLIC_BASE_URL + "/checkout-success.html?checkout_id={CHECKOUT_ID}"`; return_url = `PUBLIC_BASE_URL + "/#pricing"`; metadata `{plan}`. `/thanh-toan.html` giữ lại làm trang chuyển hướng sang trang mới (giữ query).
 - `/api/me`, `/api/quota`: thêm `"period":"day"|"week"|"month"`.
 - **Thông báo lỗi song ngữ**: mọi `error.message` theo ngôn ngữ yêu cầu — header `Accept-Language` (vi* → tiếng Việt, còn lại → tiếng Anh; mặc định EN). Gom thông điệp vào một bảng `messages.py` (en/vi), có test đảm bảo mỗi code có đủ 2 ngôn ngữ.
@@ -278,7 +278,7 @@ API thay đổi:
 - Use cases toàn cầu: video localization to Vietnamese, e-learning & language learning, apps/IVR/games, audiobooks & podcasts for the Vietnamese diaspora, developers via API.
 - Bảng giá: toggle Weekly / Monthly / Yearly (mặc định Monthly), card Free + card Pro theo chu kỳ đang chọn, nhãn "Most popular" ở Monthly, "Save X%"; nút "Get Pro" → checkout. Billing tắt → "Coming soon" + waitlist.
 - Máy tính chi phí: USD; so sánh với "typical international TTS (~$16 / 1M chars)" và "human voice-over (~$6 / finished minute)" — ghi rõ là ước tính.
-- FAQ EN+VI: Polar là Merchant of Record (thuế/hoá đơn VAT theo nước khách), thẻ quốc tế/Apple Pay/Google Pay; khách VN: thẻ Visa/Mastercard quốc tế được, thẻ ATM nội địa Napas không; huỷ trong customer portal; key gửi qua email.
+- FAQ EN+VI: Polar là Merchant of Record (thuế/hoá đơn VAT theo nước khách), thẻ quốc tế/Apple Pay/Google Pay; khách VN: thẻ Visa/Mastercard quốc tế được, thẻ ATM nội địa Napas không; huỷ trong customer portal; key nằm trong customer portal (email biên nhận của Polar có link "Access purchase").
 - Trang pháp lý: bản tiếng Anh là chính `terms.html`, `privacy.html`, `refund.html`; bản tiếng Việt giữ ở `dieu-khoan.html`, `bao-mat.html`, `hoan-tien.html`; hai bản liên kết qua lại; nội dung cập nhật theo gói Pro tuần/tháng/năm (hoàn tiền: trong 14 ngày nếu dùng < 10% hạn mức của kỳ đầu; gói tuần: trong 3 ngày). Giữ placeholder tên pháp lý `[Legal name]` / `[Tên pháp lý]`.
 - `checkout-success.html` song ngữ.
 - SEO: `<link rel="alternate" hreflang>` không áp dụng được với một URL đổi ngôn ngữ phía client → chỉ cần meta description/OG tiếng Anh, `og:image` có thể bỏ; `canonical` https://dattts.com/.

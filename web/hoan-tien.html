@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="vi">
+<html lang="vi" data-page-lang="vi" data-alt-href="refund.html">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chính sách hoàn tiền – DatTTS</title>
-<meta name="description" content="Hoàn tiền đầy đủ trong 14 ngày nếu dùng dưới 10% hạn mức tháng; Polar xử lý hoàn tiền.">
+<meta name="description" content="Chính sách hoàn tiền của DatTTS cho gói Pro tuần, tháng, năm. Polar (Merchant of Record) thực hiện hoàn tiền.">
 <link rel="canonical" href="https://dattts.com/hoan-tien.html">
 <meta name="theme-color" content="#D63A6E">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='10' fill='%23D63A6E'/%3E%3Cpath d='M24 9v22M24 22.5a6.5 6.5 0 1 1 0-.01' stroke='%23fff' stroke-width='3.2' fill='none' stroke-linecap='round'/%3E%3Cpath d='M19 13.5h9' stroke='%23E7A422' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
@@ -15,18 +15,21 @@
 <link rel="stylesheet" href="styles.css">
 </head>
 <body class="subpage">
-<a class="skip" href="#main">Bỏ qua, tới nội dung chính</a>
+<a class="skip" href="#main" data-i18n="skip.main">Bỏ qua, tới nội dung chính</a>
 
 <div class="wrap">
-  <nav aria-label="Điều hướng chính">
-    <a class="logo" href="./" aria-label="DatTTS trang chủ">
+  <nav aria-label="Điều hướng chính" data-i18n-attr="aria-label:nav.aria">
+    <a class="logo" href="./" aria-label="DatTTS trang chủ" data-i18n-attr="aria-label:nav.home">
       <svg viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="10" fill="var(--lotus)"/>
         <path d="M24 9v22M24 22.5a6.5 6.5 0 1 1 0-.01" stroke="#fff" stroke-width="3.2" fill="none" stroke-linecap="round"/>
         <path d="M19 13.5h9" stroke="var(--gold)" stroke-width="3" stroke-linecap="round"/></svg>
       DatTTS <small>.com</small>
     </a>
-    <div class="navlinks"><a href="./#studio">Phòng thu</a><a href="./#bang-gia">Bảng giá</a><a href="./#api">API</a><a href="./#hoi-dap">Hỏi đáp</a></div>
-    <button class="iconbtn" id="themeBtn" type="button" aria-label="Đổi giao diện sáng/tối" title="Đổi giao diện sáng/tối">
+    <div class="navlinks"><a href="./#studio" data-i18n="nav.studio">Phòng thu</a><a href="./#pricing" data-i18n="nav.pricing">Bảng giá</a><a href="./#api" data-i18n="nav.api">API</a><a href="./#faq" data-i18n="nav.faq">Hỏi đáp</a></div>
+    <div class="langsw" role="group" aria-label="Ngôn ngữ" data-i18n-attr="aria-label:lang.aria">
+      <button type="button" data-lang="en" aria-pressed="false" lang="en" aria-label="English">EN</button><button type="button" data-lang="vi" aria-pressed="true" lang="vi" aria-label="Tiếng Việt">VI</button>
+    </div>
+    <button class="iconbtn" id="themeBtn" type="button" aria-label="Đổi giao diện sáng/tối" title="Đổi giao diện sáng/tối" data-i18n-attr="aria-label:theme.toggle;title:theme.toggle">
       <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>
       <svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
     </button>
@@ -34,59 +37,58 @@
 
   <main id="main">
     <article class="doc">
-      <div class="eyebrow">Pháp lý</div>
+      <div class="eyebrow" data-i18n="legal.eyebrow">Pháp lý</div>
       <h1>Chính sách hoàn tiền</h1>
       <p class="updated">Cập nhật lần cuối: 08/11/2026</p>
+      <p class="langnote"><span lang="en">English version: <a href="refund.html">Refund Policy</a></span>. Bản tiếng Anh là bản chính; nếu hai bản có điểm khác nhau, bản tiếng Anh được áp dụng.</p>
 
-      <p>Chúng tôi muốn bạn chỉ trả tiền khi DatTTS thực sự có ích. Chính sách này áp dụng cho các gói trả phí (Cá nhân, Không giới hạn) mua qua Polar.</p>
+      <p>Chúng tôi muốn bạn chỉ trả tiền khi DatTTS thực sự có ích. Chính sách này áp dụng cho các gói Pro tuần, Pro tháng và Pro năm mua qua Polar.</p>
       <div class="callout"><a href="https://polar.sh" rel="noopener">Polar Software Inc.</a> là bên bán hàng chính thức (Merchant of Record). Mọi khoản hoàn tiền được Polar thực hiện về đúng phương thức bạn đã thanh toán; bạn gửi yêu cầu cho chúng tôi, chúng tôi duyệt và yêu cầu Polar hoàn tiền.</div>
 
-      <h2>1. Khi nào được hoàn tiền đầy đủ</h2>
-      <p>Bạn được hoàn <b>100%</b> số tiền của một kỳ thanh toán (lần mua đầu hoặc lần gia hạn) nếu đáp ứng cả hai điều kiện:</p>
+      <h2>1. Hoàn tiền đầy đủ cho lần mua đầu tiên</h2>
+      <p>Bạn được hoàn <b>100%</b> khoản thanh toán đầu tiên của một gói Pro nếu đáp ứng cả hai điều kiện:</p>
       <ol>
-        <li>Yêu cầu được gửi <b>trong vòng 14 ngày</b> kể từ ngày bị trừ tiền của kỳ đó; và</li>
-        <li>Từ ngày bị trừ tiền tới khi gửi yêu cầu, key của bạn đã dùng <b>dưới 10% hạn mức tháng</b> theo bộ đếm ký tự của chúng tôi: dưới 100.000 ký tự với gói Cá nhân, dưới 2.000.000 ký tự với gói Không giới hạn. Bộ đếm tính theo tháng dương lịch (làm mới ngày 1 hằng tháng, giờ Việt Nam).</li>
+        <li>yêu cầu được gửi <b>trong thời hạn hoàn tiền</b> kể từ ngày bị trừ tiền; và</li>
+        <li>tổng số ký tự key của bạn đã dùng <b>từ lúc bị trừ tiền tới khi gửi yêu cầu</b> <b>dưới 10% hạn mức của một kỳ</b> (mức trong bảng dưới), theo bộ đếm ký tự của chúng tôi. Mọi lượt dùng kể từ lúc trừ tiền đều được cộng, kể cả khi vắt qua hai tuần hoặc hai tháng dương lịch.</li>
       </ol>
+      <div class="tblwrap"><table>
+        <thead><tr><th>Gói</th><th>Thời hạn yêu cầu</th><th>Đã dùng dưới</th></tr></thead>
+        <tbody>
+          <tr><td>Pro tuần</td><td>3 ngày</td><td>25.000 ký tự (10% của 250.000 ký tự tuần đầu)</td></tr>
+          <tr><td>Pro tháng</td><td>14 ngày</td><td>100.000 ký tự (10% của 1.000.000 ký tự tháng đầu)</td></tr>
+          <tr><td>Pro năm</td><td>14 ngày</td><td>100.000 ký tự (10% hạn mức 1.000.000 ký tự của tháng đầu)</td></tr>
+        </tbody>
+      </table></div>
       <p>Ngoài ra, chúng tôi luôn hoàn tiền đầy đủ cho các khoản bị trừ trùng hoặc bị trừ do lỗi kỹ thuật của chúng tôi hay của Polar.</p>
 
       <h2>2. Những trường hợp khác</h2>
       <ul>
-        <li>Quá 14 ngày hoặc đã dùng từ 10% hạn mức tháng trở lên: không hoàn tiền, nhưng bạn có thể huỷ gói bất kỳ lúc nào để không bị trừ tiền kỳ sau; gói vẫn dùng được đến hết kỳ đã trả.</li>
+        <li>Khoản gia hạn, yêu cầu quá thời hạn, hoặc đã dùng từ 10% hạn mức của kỳ đầu trở lên: không hoàn tiền, nhưng bạn có thể huỷ gói bất kỳ lúc nào để không bị trừ tiền kỳ sau; gói vẫn dùng được đến hết kỳ đã trả.</li>
         <li>Dịch vụ gián đoạn do lỗi của chúng tôi liên tục quá 72 giờ: chúng tôi xem xét hoàn một phần tương ứng thời gian bị gián đoạn.</li>
-        <li>Tài khoản bị khoá do vi phạm <a href="dieu-khoan.html">Điều khoản dịch vụ</a> (lừa đảo, mạo danh, nội dung trái pháp luật…): không hoàn tiền.</li>
+        <li>Key bị khoá do vi phạm <a href="dieu-khoan.html">Điều khoản dịch vụ</a> (lừa đảo, mạo danh, nội dung trái pháp luật…): không hoàn tiền.</li>
       </ul>
 
       <h2>3. Cách yêu cầu hoàn tiền</h2>
       <ol>
         <li>Gửi email tới <a href="mailto:support@dattts.com?subject=Y%C3%AAu%20c%E1%BA%A7u%20ho%C3%A0n%20ti%E1%BB%81n">support@dattts.com</a> từ email bạn dùng khi mua, ghi rõ gói và mã đơn hàng (hoặc số hoá đơn Polar gửi bạn). Lý do không bắt buộc nhưng giúp chúng tôi cải thiện dịch vụ.</li>
-        <li>Chúng tôi kiểm tra số ký tự key đã dùng theo bộ đếm của chúng tôi và phản hồi trong vòng 3 ngày làm việc.</li>
+        <li>Chúng tôi tra số ký tự key đã dùng kể từ lúc trừ tiền trong sổ ghi lượt dùng và phản hồi trong vòng 3 ngày làm việc.</li>
         <li>Khi được duyệt, Polar hoàn tiền về thẻ hoặc ví bạn đã dùng. Tiền thường về tài khoản sau 5–10 ngày làm việc, tuỳ ngân hàng.</li>
       </ol>
-      <p>Sau khi hoàn tiền, gói của kỳ đó bị huỷ và API key bị thu hồi. Khoản hoàn được tính bằng USD; chênh lệch tỷ giá hay phí chuyển đổi ngoại tệ do ngân hàng của bạn thu nằm ngoài kiểm soát của chúng tôi và Polar.</p>
+      <p>Khi duyệt hoàn tiền, chúng tôi yêu cầu Polar huỷ gói đó và thu hồi API key cùng lúc; key ngừng dùng được trên DatTTS trong vài phút. Khoản hoàn được tính bằng USD; chênh lệch tỷ giá hay phí chuyển đổi ngoại tệ do ngân hàng của bạn thu nằm ngoài kiểm soát của chúng tôi và Polar.</p>
 
       <h2>4. Khiếu nại với ngân hàng (chargeback)</h2>
       <p>Nếu có vấn đề với giao dịch, hãy liên hệ chúng tôi trước: phần lớn trường hợp được giải quyết nhanh hơn nhiều so với khiếu nại qua ngân hàng. Chính sách này không hạn chế các quyền của người tiêu dùng mà pháp luật nơi bạn cư trú bảo đảm.</p>
-
-      <section class="en" lang="en" aria-labelledby="en-sum">
-        <h2 id="en-sum">Summary in English</h2>
-        <ul>
-          <li><b>Full refund within 14 days</b> of any charge (first purchase or renewal) if, since that charge, your key has used <b>less than 10% of the monthly quota</b> according to our character counter (under 100,000 characters on Personal, under 2,000,000 on Unlimited; the counter follows calendar months, Vietnam time). Duplicate or erroneous charges are always refunded in full.</li>
-          <li>Otherwise no refund, but you can cancel any time in the Polar customer portal and keep access until the end of the paid period.</li>
-          <li>Request refunds by emailing <a href="mailto:support@dattts.com">support@dattts.com</a> with your order or invoice number; we reply within 3 business days.</li>
-          <li><b>Polar Software Inc. is our Merchant of Record and reseller</b> and processes all refunds to the original payment method (usually 5–10 business days). The API key is revoked after a refund.</li>
-          <li>DatTTS is operated by [Tên chủ sở hữu / doanh nghiệp], an individual operator in Vietnam. Speech is generated with VieNeu-TTS by Phạm Nguyễn Ngọc Bảo (Apache-2.0 license).</li>
-        </ul>
-      </section>
     </article>
   </main>
 
   <footer>
     <span>© 2026 DatTTS · dattts.com</span>
-    <span>Giọng đọc tạo bởi <a href="https://huggingface.co/pnnbao-ump/VieNeu-TTS-v3-Turbo" rel="noopener">VieNeu-TTS by Phạm Nguyễn Ngọc Bảo</a> (Apache-2.0)</span>
-    <nav class="footlinks" aria-label="Chính sách"><a href="dieu-khoan.html">Điều khoản</a><a href="bao-mat.html">Bảo mật</a><a href="hoan-tien.html">Hoàn tiền</a><a href="mailto:support@dattts.com">support@dattts.com</a></nav>
+    <span><span data-i18n="footer.credit">Giọng đọc:</span> <a href="https://huggingface.co/pnnbao-ump/VieNeu-TTS-v3-Turbo" rel="noopener">VieNeu-TTS</a> <span data-i18n="footer.creditBy">của</span> <span lang="vi">Phạm Nguyễn Ngọc Bảo</span> (Apache-2.0)</span>
+    <nav class="footlinks" aria-label="Chính sách" data-i18n-attr="aria-label:footer.aria"><a href="terms.html" data-href-vi="dieu-khoan.html" data-i18n="footer.terms">Điều khoản</a><a href="privacy.html" data-href-vi="bao-mat.html" data-i18n="footer.privacy">Bảo mật</a><a href="refund.html" data-href-vi="hoan-tien.html" data-i18n="footer.refund">Hoàn tiền</a><a href="mailto:support@dattts.com">support@dattts.com</a></nav>
   </footer>
 </div>
 
+<script src="i18n.js"></script>
 <script src="config.js"></script>
 <script src="site.js"></script>
 </body>

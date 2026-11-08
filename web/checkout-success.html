@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title data-i18n="meta.cs.title">Checkout – DatTTS</title>
+<meta name="description" data-i18n-attr="content:meta.cs.desc" content="Your DatTTS checkout status and how to get your API key.">
+<meta name="robots" content="noindex">
+<link rel="canonical" href="https://dattts.com/checkout-success.html">
+<meta name="theme-color" content="#D63A6E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='10' fill='%23D63A6E'/%3E%3Cpath d='M24 9v22M24 22.5a6.5 6.5 0 1 1 0-.01' stroke='%23fff' stroke-width='3.2' fill='none' stroke-linecap='round'/%3E%3Cpath d='M19 13.5h9' stroke='%23E7A422' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=Fraunces:ital,opsz,wght@0,9..144,600;1,9..144,500;1,9..144,700&family=JetBrains+Mono:wght@400;600&display=swap&subset=vietnamese">
+<script>try{var t=localStorage.getItem('dattts.theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body class="subpage">
+<a class="skip" href="#main" data-i18n="skip.main">Skip to main content</a>
+
+<div class="wrap">
+  <nav aria-label="Main navigation" data-i18n-attr="aria-label:nav.aria">
+    <a class="logo" href="./" aria-label="DatTTS home" data-i18n-attr="aria-label:nav.home">
+      <svg viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="10" fill="var(--lotus)"/>
+        <path d="M24 9v22M24 22.5a6.5 6.5 0 1 1 0-.01" stroke="#fff" stroke-width="3.2" fill="none" stroke-linecap="round"/>
+        <path d="M19 13.5h9" stroke="var(--gold)" stroke-width="3" stroke-linecap="round"/></svg>
+      DatTTS <small>.com</small>
+    </a>
+    <div class="navlinks"><a href="./#studio" data-i18n="nav.studio">Studio</a><a href="./#pricing" data-i18n="nav.pricing">Pricing</a><a href="./#api" data-i18n="nav.api">API</a><a href="./#faq" data-i18n="nav.faq">FAQ</a></div>
+    <div class="langsw" role="group" aria-label="Language" data-i18n-attr="aria-label:lang.aria">
+      <button type="button" data-lang="en" aria-pressed="true" lang="en" aria-label="English">EN</button><button type="button" data-lang="vi" aria-pressed="false" lang="vi" aria-label="Tiếng Việt">VI</button>
+    </div>
+    <button class="iconbtn" id="themeBtn" type="button" aria-label="Switch light/dark theme" title="Switch light/dark theme" data-i18n-attr="aria-label:theme.toggle;title:theme.toggle">
+      <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>
+      <svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
+    </button>
+  </nav>
+
+  <main id="main">
+    <h2 class="sr-only" data-i18n="cs.h">Payment status</h2>
+    <p class="sr-only" id="payLive" role="status" aria-live="polite"></p>
+    <div class="paycard">
+      <div id="payCard">
+        <div class="pstate wait"><i aria-hidden="true"></i><span data-i18n="cs.loading">Loading</span></div>
+        <h1 tabindex="-1" data-i18n="cs.checkingTitle">Checking your payment…</h1>
+        <noscript><p class="lead">This page needs JavaScript to check your payment. If you’ve paid, Polar has already emailed your API key. · Trang này cần JavaScript để kiểm tra thanh toán. Nếu bạn đã thanh toán, Polar đã gửi API key qua email.</p></noscript>
+      </div>
+
+      <form class="keybox" id="keyForm" novalidate>
+        <h2 data-i18n="cs.key.title">Already have your API key?</h2>
+        <p class="note" data-i18n-html="cs.key.note">Paste the key starting with <code>DATTTS</code> from Polar’s email. We check it, then save it in this browser so the studio can use it right away.</p>
+        <label class="sr-only" for="keyInput" data-i18n="key.label">API key</label>
+        <div class="keyrow">
+          <input type="text" id="keyInput" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="DATTTS-XXXXXXXX-…" aria-describedby="keyMsg">
+          <button class="btn btn-primary" id="keySave" type="submit"><span class="spinner" aria-hidden="true"></span><span data-i18n="cs.key.save">Save key</span></button>
+        </div>
+        <p class="wl-msg" id="keyMsg" role="status" aria-live="polite"></p>
+      </form>
+    </div>
+  </main>
+
+  <footer>
+    <span>© 2026 DatTTS · dattts.com</span>
+    <span><span data-i18n="footer.credit">Voices:</span> <a href="https://huggingface.co/pnnbao-ump/VieNeu-TTS-v3-Turbo" rel="noopener">VieNeu-TTS</a> <span data-i18n="footer.creditBy">by</span> <span lang="vi">Phạm Nguyễn Ngọc Bảo</span> (Apache-2.0)</span>
+    <nav class="footlinks" aria-label="Policies" data-i18n-attr="aria-label:footer.aria"><a href="terms.html" data-href-vi="dieu-khoan.html" data-i18n="footer.terms">Terms</a><a href="privacy.html" data-href-vi="bao-mat.html" data-i18n="footer.privacy">Privacy</a><a href="refund.html" data-href-vi="hoan-tien.html" data-i18n="footer.refund">Refunds</a><a href="mailto:support@dattts.com">support@dattts.com</a></nav>
+  </footer>
+</div>
+
+<script src="i18n.js"></script>
+<script src="config.js"></script>
+<script src="site.js"></script>
+<script src="checkout-success.js"></script>
+</body>
+</html>

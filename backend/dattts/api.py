@@ -447,7 +447,7 @@ def create_app(renderer, store, settings: Settings | None = None, *, polar: Pola
 
     def refund(qk: str | None, chars: int) -> None:
         if qk and chars:
-            store.kv_incr(qk, -chars)
+            billing.refund(qk, chars)  # key Polar: hoàn cả bucket kỳ lẫn sổ cái lâu dài; IP: chỉ bucket
 
     # ---------- kết quả ----------
     def public_result(meta: dict, cached: bool, request: Request) -> dict:
@@ -738,6 +738,15 @@ def create_app(renderer, store, settings: Settings | None = None, *, polar: Pola
     def admin_billing(request: Request):
         require_admin(request)
         return JSONResponse(billing.admin_summary(), headers=no_store)
+
+    @app.get("/api/admin/usage")
+    def admin_usage(request: Request, license_key_id: str | None = None, customer_id: str | None = None,
+                    since: str | None = None):
+        """Sổ cái dùng ký tự của một key / một khách (để áp dụng chính sách hoàn tiền "< 10 %")."""
+        require_admin(request)
+        return JSONResponse(billing.admin_usage((license_key_id or "").strip()[:100] or None,
+                                                (customer_id or "").strip()[:100] or None,
+                                                (since or "").strip() or None), headers=no_store)
 
     # /api/* không khớp → lỗi JSON (không rơi xuống trang tĩnh)
     @app.api_route("/api/{rest:path}", methods=["GET", "POST", "HEAD", "PUT", "DELETE", "PATCH"],

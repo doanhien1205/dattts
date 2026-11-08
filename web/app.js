@@ -29,8 +29,10 @@
     return (h ? h + ':' + p(m) : p(m)) + ':' + p(ss);
   }
   function humanDur(sec) {
-    if (sec < 60) return t('dur.sec', { n: Math.max(1, Math.round(sec)) });
-    if (sec < 3600) { const m = Math.floor(sec / 60), s = Math.round(sec % 60); return s ? t('dur.minSec', { m, s }) : t('dur.min', { m }); }
+    // Làm tròn TỔNG trước rồi mới tách phút/giây (tránh "19 phút 60 giây").
+    const tot = Math.max(1, Math.round(sec || 0));
+    if (tot < 60) return t('dur.sec', { n: tot });
+    if (tot < 3600) { const m = Math.floor(tot / 60), s = tot % 60; return s ? t('dur.minSec', { m, s }) : t('dur.min', { m }); }
     return t('dur.hour', { h: I.fmtNum(sec / 3600, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) });
   }
   // Giống count_chars của máy chủ: NFC, bỏ ký tự điều khiển, gộp khoảng trắng, giữ xuống dòng đoạn.
@@ -42,7 +44,10 @@
   const countChars = s => cleanText(s).length;
   const charsLabel = n => I.tp('count.chars', n, { n: fmtN(n) });
 
-  class ApiError extends Error { constructor(message, code, status) { super(message); this.code = code; this.status = status; } }
+  // src: hàm dựng lại thông điệp bằng t() (chuỗi phía trình duyệt) → dịch lại được khi đổi ngôn ngữ.
+  // Thông điệp từ máy chủ không có src (đã theo ngôn ngữ lúc gửi request).
+  class ApiError extends Error { constructor(message, code, status, src) { super(message); this.code = code; this.status = status; this.src = src || null; } }
+  const tErr = (key, code, status, vars) => new ApiError(t(key, vars), code, status, () => t(key, vars));
   async function api(path, opts = {}) {
     // Accept-Language theo ngôn ngữ đang chọn → máy chủ trả error.message đúng ngôn ngữ.
     const init = { method: opts.method || 'GET', headers: { Accept: 'application/json', 'Accept-Language': I.lang }, signal: opts.signal };
@@ -53,8 +58,8 @@
     let res;
     try { res = await fetch(apiUrl(path), init); }
     catch (e) {
-      if (e && e.name === 'AbortError') throw new ApiError(t('err.timeout'), 'timeout', 0);
-      throw new ApiError(t('err.network'), 'network', 0);
+      if (e && e.name === 'AbortError') throw tErr('err.timeout', 'timeout', 0);
+      throw tErr('err.network', 'network', 0);
     }
     let data = null;
     try { data = await res.json(); } catch (e) { /* không phải JSON */ }
@@ -64,14 +69,16 @@
         // Key hỏng/hết hạn: nếu là key đang lưu thì gỡ ra để khách biết và quay về lượt miễn phí.
         if (opts.key === undefined && sentKey === apiKey) {
           onInvalidKey();
-          throw new ApiError(t('err.keyRemoved'), 'invalid_api_key', 401);
+          throw tErr('err.keyRemoved', 'invalid_api_key', 401);
         }
-        throw new ApiError(t('err.keyBad'), 'invalid_api_key', 401);
+        throw tErr('err.keyBad', 'invalid_api_key', 401);
       }
-      const fallback = res.status === 429 ? t('err.quota') : res.status >= 500 ? t('err.server') : t('err.badRequest', { code: res.status });
-      throw new ApiError((er && er.message) || fallback, (er && er.code) || 'http_' + res.status, res.status);
+      const code = (er && er.code) || 'http_' + res.status;
+      if (er && er.message) throw new ApiError(er.message, code, res.status);
+      throw res.status === 429 ? tErr('err.quota', code, 429) : res.status >= 500 ? tErr('err.server', code, res.status)
+        : tErr('err.badRequest', code, res.status, { code: res.status });
     }
-    if (data == null) throw new ApiError(t('err.badResponse'), 'bad_response', res.status);
+    if (data == null) throw tErr('err.badResponse', 'bad_response', res.status);
     return data;
   }
 
@@ -81,7 +88,7 @@
     const h = decodeURIComponent(location.hash.slice(1));
     const to = OLD_ANCHORS[h];
     if (!to) return;
-    try { history.replaceState(null, '', location.pathname + location.search + '#' + to); } catch (e) { /* bỏ qua */ }
+    try { window.history.replaceState(null, '', location.pathname + location.search + '#' + to); } catch (e) { /* bỏ qua */ }
     const el = document.getElementById(to);
     if (el) el.scrollIntoView({ block: 'start' });
   }
@@ -110,14 +117,25 @@
 
   // ---------- thông báo lỗi trong trang ----------
   const alertEl = $('#alert');
-  function showAlert(msg, kind) {
+  // alertSrc: hàm dựng lại thông điệp (chuỗi phía trình duyệt) hoặc null (thông điệp máy chủ) — xem relocalize().
+  let alertSrc = null, alertKind;
+  function showAlert(msg, kind, src) {
+    alertSrc = typeof src === 'function' ? src : null; alertKind = kind;
     alertEl.className = 'alert' + (kind === 'info' ? ' info' : '');
     alertEl.setAttribute('role', kind === 'info' ? 'status' : 'alert');
     alertEl.innerHTML = '<span>' + esc(msg) + '</span><button class="x" type="button" aria-label="' + esc(t('alert.close')) + '">×</button>';
     alertEl.hidden = false;
     $('.x', alertEl).onclick = hideAlert;
   }
-  function hideAlert() { alertEl.hidden = true; alertEl.textContent = ''; }
+  function hideAlert() { alertEl.hidden = true; alertEl.textContent = ''; alertSrc = null; }
+  const alertT = (key, vars) => showAlert(t(key, vars), undefined, () => t(key, vars));
+  const alertErr = e => showAlert(e.message, undefined, e.src);
+  // Đổi ngôn ngữ: dịch lại thông báo phía trình duyệt; thông báo của máy chủ (ngôn ngữ cũ) thì gỡ đi
+  // để trang không lẫn hai thứ tiếng.
+  function relocalizeAlert() {
+    if (alertEl.hidden) return;
+    if (alertSrc) showAlert(alertSrc(), alertKind, alertSrc); else hideAlert();
+  }
 
   // ---------- chủ đề sáng/tối ----------
   const darkMQ = matchMedia('(prefers-color-scheme: dark)');
@@ -190,7 +208,7 @@
       return `<div class="vcard${sel ? ' sel' : ''}" role="listitem" data-id="${esc(v.id)}">
         <button class="vpick" type="button" aria-pressed="${sel}" title="${esc(voiceDesc(v))}">
           <span class="avatar ${regionClass(v.region)}" aria-hidden="true">${esc(initials(v.name))}</span>
-          <span class="txt"><b>${esc(v.name)}</b><small>${esc(voiceMeta(v))}</small></span>
+          <span class="txt"><b lang="vi">${esc(v.name)}</b><small>${esc(voiceMeta(v))}</small></span>
         </button>
         <button class="vplay" type="button" aria-label="${esc(t('voices.sample', { name: v.name }))}">
           <svg class="i-play" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 1.5v11l9.5-5.5z"/></svg>
@@ -216,7 +234,7 @@
     const v = voiceMap.get(selectedId); if (!v) return;
     const d = voiceDesc(v);
     $('#currentVoice').innerHTML = `<span class="avatar ${regionClass(v.region)}" aria-hidden="true">${esc(initials(v.name))}</span>
-      <span><b>${esc(v.name)}</b><small>${esc(voiceMeta(v))}${d && !/·/.test(d) ? ' — ' + esc(d) : ''}</small></span>`;
+      <span><b lang="vi">${esc(v.name)}</b><small>${esc(voiceMeta(v))}${d && !/·/.test(d) ? ' — ' + esc(d) : ''}</small></span>`;
   }
   function selectVoice(id, quiet) {
     if (!voiceMap.has(id)) return;
@@ -436,7 +454,7 @@
       catch (e) { if ((e.code === 'network' || e.status >= 500) && ++misses < 4) continue; throw e; }
       onProgress && onProgress(s);
       if (s.status === 'done' && s.result) return s.result;
-      if (s.status === 'error') { const er = s.error || {}; throw new ApiError(er.message || t('err.jobFailed'), er.code || 'job_error', 500); }
+      if (s.status === 'error') { const er = s.error || {}; throw er.message ? new ApiError(er.message, er.code || 'job_error', 500) : tErr('err.jobFailed', er.code || 'job_error', 500); }
     }
   }
   function progressLabel(s) {
@@ -451,8 +469,8 @@
     if (busy) return;
     if (!online) { speakOffline(); return; }
     const n = countChars(txt.value);
-    if (!n) { showAlert(t('err.empty')); txt.focus(); return; }
-    if (n > JOB_MAX) { showAlert(t('err.tooLong', { n: fmtN(n), max: fmtN(JOB_MAX) })); return; }
+    if (!n) { alertT('err.empty'); txt.focus(); return; }
+    if (n > JOB_MAX) { showAlert(t('err.tooLong', { n: fmtN(n), max: fmtN(JOB_MAX) }), undefined, () => t('err.tooLong', { n: fmtN(n), max: fmtN(JOB_MAX) })); return; }
     hideAlert(); exclusive('main');
     primeAudio(); // trong cử chỉ người dùng (trước mọi await) — Safari/iOS bắt buộc
     const body = buildBody();
@@ -470,7 +488,7 @@
       setTimeout(() => { if (!busy) setProgress('off'); }, 1200);
     } catch (e) {
       setProgress('off');
-      showAlert(e.message);
+      alertErr(e);
       if (e.code === 'quota_exceeded') { loadQuota(); if (apiKey) loadMe(); }
       if (e.code === 'network') checkHealth(true);
     } finally { setBusy(false); }
@@ -553,7 +571,7 @@
       const a = $(`#downloads a[data-fmt="${f}"]`); if (a) { a.click(); a.focus(); }
       announce(t('dl.altDone', { f: f.toUpperCase() }));
     } catch (err) {
-      showAlert(err.message);
+      alertErr(err);
       if (current === cur) renderDownloads();
     } finally { delete cur.pending[f]; }
   });
@@ -615,7 +633,7 @@
   audio.addEventListener('durationchange', updateTime);
   audio.addEventListener('error', () => {
     if (!audio.getAttribute('src') || !current) return;
-    showAlert(t('err.audio'));
+    alertT('err.audio');
   });
   playBtn.onclick = () => { if (audio.paused) { primeAudio(); audio.play().catch(() => {}); } else audio.pause(); };
   seek.addEventListener('input', () => { dragging = true; const d = audioDur(); if (d) { audio.currentTime = seek.value / 1000 * d; } sync(); });
@@ -716,8 +734,8 @@
   function markWord(idx) { wordSpans.forEach((s, i) => { s.className = i < idx ? 'seg said' : i === idx ? 'seg now' : 'seg'; }); }
   function speakOffline() {
     const text = cleanText(txt.value.replace(/\[[^\]\n]{1,40}\]\s*/g, ''));
-    if (!text) { showAlert(t('err.empty')); return; }
-    if (!synth) { showAlert(t('offline.noSynth')); return; }
+    if (!text) { alertT('err.empty'); return; }
+    if (!synth) { alertT('offline.noSynth'); return; }
     hideAlert(); exclusive('speech'); synth.cancel(); clearInterval(fallbackTimer);
     // karaoke ước lượng theo từ
     current = null; segs = []; segEls = [];
@@ -786,7 +804,7 @@
   $('#history').addEventListener('click', e => {
     const b = e.target.closest('[data-replay]'); if (!b) return;
     const h = history[+b.dataset.replay]; if (!h) return;
-    if (!online) { showAlert(t('err.needServer')); return; }
+    if (!online) { alertT('err.needServer'); return; }
     hideAlert();
     primeAudio();
     // Dùng đúng từ điển lúc tạo bản này (không phải từ điển hiện tại) để bản WAV/OGG khớp bản đã nghe
@@ -849,7 +867,7 @@
   const planById = id => billing.plans.find(p => p && p.id === id) || null;
   const isUsd = p => String((p && p.currency) || billing.currency || 'usd').toLowerCase() === 'usd';
   const vndOfUsd = usd => Math.round(usd * VND_PER_USD / 1000) * 1000;
-  const fmtVnd = v => I.fmtNum(v) + 'đ';
+  const fmtVnd = v => t('money.vnd', { v: I.fmtNum(v) });
   const fmtMoney = p => I.fmtMoney(p.price, (p.currency || billing.currency || 'usd'));
   const fmtUsd = usd => I.fmtMoney(Math.round(usd * 100), 'usd', usd >= 100 ? 0 : undefined);
   const CYCLES = ['week', 'month', 'year'];
@@ -904,6 +922,7 @@
     r.addEventListener('change', () => { if (!r.checked) return; cycle = r.value; store.set('cycle', cycle); setBuyMsg(''); renderPlans(); });
   });
   const buyMsg = $('#buyMsg'), buyBtn = $('#buyPro');
+  // buyMsgKey: khoá i18n (chuỗi) hoặc hàm dựng lại thông điệp; null = thông điệp máy chủ / rỗng.
   let buyMsgKey = null, buyMsgKind = '';
   function setBuyMsg(text, kind, key) { buyMsgKey = key || null; buyMsgKind = kind || ''; buyMsg.className = 'buy-msg' + (kind ? ' ' + kind : ''); buyMsg.textContent = text || ''; }
   const planAvailable = p => !!p && p.available !== false;
@@ -953,7 +972,7 @@
     $('#waitlist').hidden = !billing.loaded || billing.enabled;
     $('#pricing').classList.toggle('billing-on', billing.enabled);
     $('#pricingLead').textContent = billing.loaded && !billing.enabled ? t('pricing.leadSoon') : t('pricing.lead');
-    if (buyMsgKey) buyMsg.textContent = t(buyMsgKey);
+    if (buyMsgKey) buyMsg.textContent = typeof buyMsgKey === 'function' ? buyMsgKey() : t(buyMsgKey);
     if (!billing.enabled && !$('#waitlist').hidden && wlPlan && !wlTouched) { wlPlan.value = id; }
     calc();
   }
@@ -988,14 +1007,14 @@
     try {
       const r = await api('/api/billing/checkout', { method: 'POST', body: { plan }, key: '' });
       const url = safeRedirect(r && r.url);
-      if (!url) throw new ApiError(t('err.checkout'), 'bad_response', 200);
+      if (!url) throw tErr('err.checkout', 'bad_response', 200);
       leaving = true;
       setBuyMsg(t('buy.redirect'), 'ok', 'buy.redirect');
       location.href = url;
     } catch (e) {
       if (e.code === 'billing_disabled') { billing.enabled = false; setBuyMsg(t('buy.disabled'), 'err', 'buy.disabled'); }
       else if (e.code === 'network') setBuyMsg(t('buy.network'), 'err', 'buy.network');
-      else setBuyMsg(e.message, 'err');
+      else setBuyMsg(e.message, 'err', e.src);
     } finally {
       // Khi đang chuyển trang thì giữ nút bận; nếu người dùng bấm Back (bfcache) thì mở lại nút.
       const reset = () => { buyBtn.classList.remove('busy'); buyBtn.removeAttribute('aria-busy'); lockBuy(false); renderPlans(); };
@@ -1032,7 +1051,7 @@
   }
   function onInvalidKey() {
     apiKey = ''; me = null; store.del('apikey'); renderAcct();
-    showAlert(t('err.keyRemoved'));
+    alertT('err.keyRemoved');
     loadQuota(); updateCount();
   }
   async function loadMe() {
@@ -1084,9 +1103,9 @@
     try {
       const r = await api('/api/billing/portal', { method: 'POST' });
       const url = safeRedirect(r && r.url);
-      if (!url) throw new ApiError(t('err.portal'), 'bad_response', 200);
+      if (!url) throw tErr('err.portal', 'bad_response', 200);
       leaving = true; location.href = url;
-    } catch (e) { showAlert(e.message); }
+    } catch (e) { alertErr(e); }
     finally {
       const reset = () => { b.classList.remove('busy'); b.disabled = false; };
       if (!leaving) reset(); else addEventListener('pageshow', ev => { if (ev.persisted) reset(); }, { once: true });
@@ -1095,7 +1114,7 @@
 
   // ---------- danh sách chờ ----------
   const wl = $('#waitlist'), wlEmail = $('#wlEmail'), wlPlan = $('#wlPlan'), wlMsg = $('#wlMsg'), wlBtn = $('#wlBtn');
-  let wlTouched = false, wlDone = null;
+  let wlTouched = false, wlDone = null, wlErr = null; // wlErr: hàm dựng lại lỗi phía trình duyệt, false = lỗi máy chủ
   const wlPlanName = v => (I.has('wl.opt.' + v.replace(/^pro_/, '')) ? t('wl.opt.' + v.replace(/^pro_/, '')) : v);
   buyBtn.addEventListener('click', () => {
     if (!billing.loaded || buying || buyBtn.getAttribute('aria-disabled') === 'true') return; // chưa biết billing bật/tắt, đang tạo phiên, hoặc gói không bán
@@ -1107,16 +1126,20 @@
   wlPlan.addEventListener('change', () => { wlTouched = true; });
   wlEmail.addEventListener('input', () => wlEmail.removeAttribute('aria-invalid'));
   function renderWlDone() {
+    if (wlErr) wlMsg.textContent = wlErr();
+    else if (wlErr === false) { wlMsg.textContent = ''; wlMsg.className = 'wl-msg'; wlErr = null; } // lỗi máy chủ, ngôn ngữ cũ
     if (!wlDone) return;
-    wlMsg.textContent = t('wl.ok', { n: fmtN(wlDone.position), plan: wlPlanName(wlDone.plan), email: wlDone.email });
+    // Trong câu dùng tên gói ("Pro Monthly"), không dùng nhãn ô chọn ("Pro · monthly").
+    const p = wlDone.plan, plan = I.has('plan.name.' + p) ? t('plan.name.' + p) : I.has('wl.name.' + p) ? t('wl.name.' + p) : wlPlanName(p);
+    wlMsg.textContent = t('wl.ok', { n: fmtN(wlDone.position), plan, email: wlDone.email });
   }
   wl.addEventListener('submit', async e => {
     e.preventDefault();
     const email = wlEmail.value.trim();
-    wlMsg.className = 'wl-msg'; wlDone = null;
+    wlMsg.className = 'wl-msg'; wlDone = null; wlErr = null;
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(email)) {
       wlEmail.setAttribute('aria-invalid', 'true'); wlMsg.classList.add('err');
-      wlMsg.textContent = t('wl.badEmail'); wlEmail.focus(); return;
+      wlErr = () => t('wl.badEmail'); wlMsg.textContent = wlErr(); wlEmail.focus(); return;
     }
     wlBtn.classList.add('busy'); wlBtn.disabled = true;
     try {
@@ -1126,7 +1149,8 @@
       store.set('waitlist', wlDone);
     } catch (err) {
       wlMsg.classList.add('err');
-      wlMsg.textContent = err.code === 'network' ? t('wl.netErr') : err.message;
+      wlErr = err.code === 'network' ? () => t('wl.netErr') : (err.src || false);
+      wlMsg.textContent = wlErr ? wlErr() : err.message;
     } finally { wlBtn.classList.remove('busy'); wlBtn.disabled = false; }
   });
 
@@ -1159,7 +1183,7 @@
     setBusy(false);
     if (!voices.length) {
       try { await loadVoices(); voicesErr = null; }
-      catch (e) { voicesErr = e.message; $('#vgrid').innerHTML = `<p class="note warn">${esc(t('voices.loadErr', { m: e.message }))}</p>`; }
+      catch (e) { voicesErr = e; $('#vgrid').innerHTML = `<p class="note warn">${esc(t('voices.loadErr', { m: e.message }))}</p>`; }
     }
     loadQuota();
     if (apiKey) loadMe();
@@ -1187,13 +1211,15 @@
 
   // ---------- đổi ngôn ngữ tại chỗ: vẽ lại mọi phần sinh động ----------
   function relocalize() {
+    relocalizeAlert();
+    if (!buyMsgKey && buyMsg.textContent) setBuyMsg(''); // lỗi máy chủ bằng ngôn ngữ cũ → gỡ
     setRec(recKey, studio.classList.contains('live') ? 'live' : studio.classList.contains('ready') ? 'ready' : '');
     if (!busy) genLabel.textContent = online ? t('gen.label') : t('gen.preview'); else genLabel.textContent = t(busyKey);
     if (retrying) $('#retryBtn').textContent = t('offline.retrying');
     setPlayLabel(); syncRate(); updateTime();
     if (quota) setQuota(quota);
     if (voices.length) { renderInsertOptions(); renderVoices(); renderCurrentVoice(); }
-    else if (voicesErr) $('#vgrid').innerHTML = `<p class="note warn">${esc(t('voices.loadErr', { m: voicesErr }))}</p>`;
+    else if (voicesErr) $('#vgrid').innerHTML = `<p class="note warn">${esc(t('voices.loadErr', { m: voicesErr.src ? voicesErr.src() : voicesErr.message }))}</p>`;
     loadBrowserVoices();
     renderDict(); renderHistory(); renderTones(); renderPlans(); renderAcct(); renderWlDone();
     renderPlayerHead(); renderDownloads();

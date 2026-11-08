@@ -132,17 +132,22 @@
       const bad = er.status === 401;
       input.setAttribute('aria-invalid', String(bad));
       const key = bad ? 'err.keyBad' : er.code === 'network' ? 'key.netErr' : null;
-      setMsg(esc(key ? t(key) : t('key.checkErr', { m: er.message })), 'err', key ? { key } : null);
+      // Lỗi khác: có thông điệp máy chủ (theo ngôn ngữ lúc gửi) → đánh dấu để gỡ khi đổi ngôn ngữ.
+      setMsg(esc(key ? t(key) : t('key.checkErr', { m: er.message })), 'err', key ? { key } : { server: true });
       input.focus();
     } finally { btn.classList.remove('busy'); btn.disabled = false; }
   });
 
   // ---------- đổi ngôn ngữ tại chỗ ----------
   document.addEventListener('dattts:lang', () => {
-    if (lastState) { const s = lastState; lastState = s; render(s, lastData); }
+    // 'disabled'/'error' chứa thông điệp của máy chủ bằng ngôn ngữ cũ → hỏi lại máy chủ (Accept-Language mới)
+    // thay vì ghép chuỗi cũ vào khung câu mới (lẫn hai thứ tiếng).
+    if ((lastState === 'disabled' || lastState === 'error') && checkoutId && UUID.test(checkoutId) && !polling) poll();
+    else if (lastState) render(lastState, lastData);
     if (msgState) {
       if (msgState.me) msg.innerHTML = okMsg(msgState.me);
       else if (msgState.key) msg.textContent = t(msgState.key);
+      else if (msgState.server) setMsg('');
     }
   });
 })();

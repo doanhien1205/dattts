@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="vi">
+<html lang="vi" data-page-lang="vi" data-alt-href="terms.html">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -15,18 +15,21 @@
 <link rel="stylesheet" href="styles.css">
 </head>
 <body class="subpage">
-<a class="skip" href="#main">Bỏ qua, tới nội dung chính</a>
+<a class="skip" href="#main" data-i18n="skip.main">Bỏ qua, tới nội dung chính</a>
 
 <div class="wrap">
-  <nav aria-label="Điều hướng chính">
-    <a class="logo" href="./" aria-label="DatTTS trang chủ">
+  <nav aria-label="Điều hướng chính" data-i18n-attr="aria-label:nav.aria">
+    <a class="logo" href="./" aria-label="DatTTS trang chủ" data-i18n-attr="aria-label:nav.home">
       <svg viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="10" fill="var(--lotus)"/>
         <path d="M24 9v22M24 22.5a6.5 6.5 0 1 1 0-.01" stroke="#fff" stroke-width="3.2" fill="none" stroke-linecap="round"/>
         <path d="M19 13.5h9" stroke="var(--gold)" stroke-width="3" stroke-linecap="round"/></svg>
       DatTTS <small>.com</small>
     </a>
-    <div class="navlinks"><a href="./#studio">Phòng thu</a><a href="./#bang-gia">Bảng giá</a><a href="./#api">API</a><a href="./#hoi-dap">Hỏi đáp</a></div>
-    <button class="iconbtn" id="themeBtn" type="button" aria-label="Đổi giao diện sáng/tối" title="Đổi giao diện sáng/tối">
+    <div class="navlinks"><a href="./#studio" data-i18n="nav.studio">Phòng thu</a><a href="./#pricing" data-i18n="nav.pricing">Bảng giá</a><a href="./#api" data-i18n="nav.api">API</a><a href="./#faq" data-i18n="nav.faq">Hỏi đáp</a></div>
+    <div class="langsw" role="group" aria-label="Ngôn ngữ" data-i18n-attr="aria-label:lang.aria">
+      <button type="button" data-lang="en" aria-pressed="false" lang="en" aria-label="English">EN</button><button type="button" data-lang="vi" aria-pressed="true" lang="vi" aria-label="Tiếng Việt">VI</button>
+    </div>
+    <button class="iconbtn" id="themeBtn" type="button" aria-label="Đổi giao diện sáng/tối" title="Đổi giao diện sáng/tối" data-i18n-attr="aria-label:theme.toggle;title:theme.toggle">
       <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>
       <svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
     </button>
@@ -34,42 +37,45 @@
 
   <main id="main">
     <article class="doc">
-      <div class="eyebrow">Pháp lý</div>
+      <div class="eyebrow" data-i18n="legal.eyebrow">Pháp lý</div>
       <h1>Điều khoản dịch vụ</h1>
       <p class="updated">Cập nhật lần cuối: 08/11/2026</p>
+      <p class="langnote"><span lang="en">English version: <a href="terms.html">Terms of Service</a></span>. Bản tiếng Anh là bản chính; nếu hai bản có điểm khác nhau, bản tiếng Anh được áp dụng.</p>
 
-      <p>DatTTS (dattts.com) là dịch vụ chuyển văn bản thành giọng nói tiếng Việt, do [Tên chủ sở hữu / doanh nghiệp] (“chúng tôi”) vận hành tại Việt Nam. Khi dùng trang web, phòng thu hoặc API của DatTTS, bạn đồng ý với các điều khoản dưới đây. Nếu không đồng ý, vui lòng ngừng sử dụng dịch vụ.</p>
+      <p>DatTTS (dattts.com) là dịch vụ chuyển văn bản thành giọng nói tiếng Việt, do [Tên pháp lý] (“chúng tôi”) vận hành tại Việt Nam. Khi dùng trang web, phòng thu hoặc API của DatTTS, bạn đồng ý với các điều khoản dưới đây. Nếu không đồng ý, vui lòng ngừng sử dụng dịch vụ.</p>
 
       <h2>1. Dịch vụ</h2>
-      <p>DatTTS nhận văn bản bạn gửi và tạo file âm thanh (MP3, WAV, OGG) kèm phụ đề (SRT, VTT) bằng mô hình <a href="https://huggingface.co/pnnbao-ump/VieNeu-TTS-v3-Turbo" rel="noopener">VieNeu-TTS by Phạm Nguyễn Ngọc Bảo</a>, phát hành theo giấy phép Apache-2.0. Chúng tôi có thể thêm, đổi hoặc ngừng một số tính năng, giọng đọc hay giới hạn kỹ thuật; thay đổi bất lợi đáng kể cho gói trả phí sẽ được báo trước qua email.</p>
+      <p>DatTTS nhận văn bản bạn gửi và tạo file âm thanh (MP3, WAV, OGG) kèm phụ đề (SRT, VTT) bằng mô hình <a href="https://huggingface.co/pnnbao-ump/VieNeu-TTS-v3-Turbo" rel="noopener">VieNeu-TTS</a> của Phạm Nguyễn Ngọc Bảo, phát hành theo giấy phép Apache-2.0. DatTTS <b>chỉ có 25 giọng dựng sẵn</b>: không có tính năng nhân bản (clone) giọng, và bạn không thể tải lên bản ghi giọng của mình hay của người khác để tạo giọng mới. Chúng tôi có thể thêm, đổi hoặc ngừng một số tính năng, giọng đọc hay giới hạn kỹ thuật; thay đổi làm giảm đáng kể quyền lợi của gói trả phí sẽ được báo trước qua email.</p>
 
       <h2>2. Gói và hạn mức</h2>
       <div class="tblwrap"><table>
-        <thead><tr><th>Gói</th><th>Hạn mức</th></tr></thead>
+        <thead><tr><th>Gói</th><th>Chu kỳ</th><th>Hạn mức</th></tr></thead>
         <tbody>
-          <tr><td>Dùng thử</td><td>20.000 ký tự mỗi ngày cho mỗi địa chỉ IP, không cần đăng ký</td></tr>
-          <tr><td>Cá nhân</td><td>1.000.000 ký tự mỗi tháng cho mỗi API key</td></tr>
-          <tr><td>Không giới hạn</td><td>Dùng hợp lý, tối đa 20.000.000 ký tự mỗi tháng cho mỗi API key</td></tr>
+          <tr><td>Miễn phí</td><td>—</td><td>20.000 ký tự mỗi ngày cho mỗi địa chỉ IP, không cần đăng ký</td></tr>
+          <tr><td>Pro tuần</td><td>Thanh toán mỗi tuần</td><td>250.000 ký tự mỗi tuần cho mỗi API key</td></tr>
+          <tr><td>Pro tháng</td><td>Thanh toán mỗi tháng</td><td>1.000.000 ký tự mỗi tháng cho mỗi API key</td></tr>
+          <tr><td>Pro năm</td><td>Thanh toán mỗi năm</td><td>1.000.000 ký tự mỗi tháng cho mỗi API key</td></tr>
         </tbody>
       </table></div>
       <ul>
+        <li>Giá hiện hành hiển thị ở <a href="./#pricing">bảng giá</a> và trang thanh toán. Mọi gói Pro có cùng tính năng (đủ giọng, đủ định dạng, phụ đề, nhiều giọng, API, dùng thương mại), chỉ khác chu kỳ thanh toán.</li>
         <li>Ký tự gồm chữ, số, dấu câu và dấu cách. Tạo lại đúng một bản đã có thì không bị tính thêm.</li>
-        <li>Hạn mức ngày làm mới lúc 00:00 giờ Việt Nam; hạn mức tháng tính theo tháng dương lịch và làm mới lúc 00:00 ngày 1 hằng tháng (giờ Việt Nam). Phần chưa dùng không được cộng dồn sang tháng sau.</li>
-        <li>“Không giới hạn” là gói dùng hợp lý: đủ cho nhu cầu cá nhân và nhóm nhỏ (khoảng 220 giờ âm thanh mỗi tháng), không dành cho việc bán lại dung lượng hay chạy tải tự động khối lượng lớn. Cần nhiều hơn, hãy liên hệ chúng tôi.</li>
+        <li>Hạn mức làm mới theo giờ Việt Nam (UTC+7): gói miễn phí lúc 00:00 mỗi ngày; Pro tuần lúc 00:00 thứ Hai hằng tuần (tuần ISO); Pro tháng và Pro năm lúc 00:00 ngày 1 mỗi tháng dương lịch. Phần chưa dùng không được cộng dồn.</li>
+        <li>Cần hơn 1.000.000 ký tự mỗi tháng? Hãy liên hệ để có gói riêng. Các gói không dành cho việc bán lại dung lượng hay chạy tải tự động khối lượng lớn thay cho người khác.</li>
       </ul>
 
       <h2>3. Thanh toán qua Polar</h2>
-      <div class="callout"><a href="https://polar.sh" rel="noopener">Polar Software Inc.</a> là bên bán hàng chính thức (Merchant of Record) và là nhà phân phối lại (reseller) các gói trả phí của DatTTS. Khi mua gói, bạn giao dịch với Polar: Polar thu tiền, tính và nộp thuế, phát hành hoá đơn, biên nhận và xử lý hoàn tiền. Điều khoản mua hàng của Polar cũng áp dụng cho giao dịch của bạn.</div>
+      <div class="callout"><a href="https://polar.sh" rel="noopener">Polar Software Inc.</a> là bên bán hàng chính thức (Merchant of Record) và là nhà phân phối lại (reseller) các gói trả phí của DatTTS. Khi mua gói Pro, bạn giao dịch với Polar: Polar thu tiền, tính và nộp thuế (VAT/thuế bán hàng theo quốc gia của bạn), phát hành hoá đơn, biên nhận và xử lý hoàn tiền. Điều khoản mua hàng của Polar cũng áp dụng cho giao dịch của bạn.</div>
       <ul>
         <li>Giá niêm yết bằng đô la Mỹ (USD). Số tiền quy đổi sang đồng trên trang chỉ để tham khảo; ngân hàng của bạn có thể thu phí chuyển đổi ngoại tệ.</li>
-        <li>Thanh toán bằng thẻ Visa, Mastercard, JCB, American Express (kể cả thẻ ghi nợ quốc tế của ngân hàng Việt Nam), Apple Pay hoặc Google Pay. Thẻ ATM nội địa chỉ dùng mạng Napas chưa được hỗ trợ.</li>
-        <li>Gói tự gia hạn mỗi kỳ cho đến khi bạn huỷ. Bạn huỷ bất kỳ lúc nào trong cổng khách hàng Polar; gói vẫn dùng được đến hết kỳ đã trả.</li>
-        <li>Nếu giá thay đổi, chúng tôi báo trước qua email ít nhất 14 ngày trước kỳ gia hạn chịu ảnh hưởng.</li>
+        <li>Thanh toán bằng thẻ Visa, Mastercard, American Express, JCB (kể cả thẻ ghi nợ quốc tế của ngân hàng Việt Nam), Apple Pay hoặc Google Pay. Thẻ ATM nội địa chỉ dùng mạng Napas không được chấp nhận.</li>
+        <li>Gói tự gia hạn khi hết mỗi kỳ tuần, tháng hoặc năm cho đến khi bạn huỷ. Bạn huỷ bất kỳ lúc nào trong cổng khách hàng Polar; gói vẫn dùng được đến hết kỳ đã trả.</li>
+        <li>Nếu giá thay đổi, chúng tôi báo qua email ít nhất 14 ngày trước kỳ gia hạn chịu ảnh hưởng (với Pro tuần: ít nhất 3 ngày).</li>
         <li>Hoàn tiền theo <a href="hoan-tien.html">Chính sách hoàn tiền</a>.</li>
       </ul>
 
       <h2>4. API key</h2>
-      <p>Sau khi thanh toán, Polar cấp cho bạn một API key (License Key, bắt đầu bằng <code>DATTTS</code>). Key là thông tin bí mật: đừng chia sẻ công khai hay nhúng vào mã nguồn chạy trên trình duyệt của người khác. Bạn chịu trách nhiệm về mọi lượt dùng bằng key của mình. Nếu nghi key bị lộ, hãy đổi key trong cổng khách hàng Polar. Key tự động bị thu hồi khi gói kết thúc hoặc bị huỷ.</p>
+      <p>Sau khi thanh toán, Polar cấp cho bạn một API key (License Key, bắt đầu bằng <code>DATTTS</code>). Bạn xem và chép key trong cổng khách hàng Polar — email biên nhận của Polar có nút “Access purchase” dẫn tới đó. Key là thông tin bí mật: đừng chia sẻ công khai hay nhúng vào mã nguồn chạy trên trình duyệt của người khác. Bạn chịu trách nhiệm về mọi lượt dùng bằng key của mình. Nếu nghi key bị lộ, hãy đổi key trong cổng khách hàng Polar; key cũ ngừng dùng được trên DatTTS trong khoảng 15 phút. Key tự động bị thu hồi khi gói kết thúc — sau kỳ cuối cùng bạn đã trả tiền nếu bạn huỷ gói, hoặc ngay sau khi được hoàn tiền.</p>
 
       <h2>5. Quy định sử dụng</h2>
       <p>Bạn không được dùng DatTTS để:</p>
@@ -85,7 +91,7 @@
       <p>Âm thanh do DatTTS tạo có thể chứa watermark (dấu nhận biết) không nghe được, giúp xác định đó là giọng nói do AI tạo. Khi đăng tải nội dung có thể khiến người nghe nhầm là người thật nói, bạn nên ghi rõ đó là giọng đọc AI.</p>
 
       <h2>6. Nội dung của bạn</h2>
-      <p>Bạn giữ mọi quyền với văn bản mình gửi và cần có quyền hợp pháp để dùng văn bản đó. Bạn cho phép chúng tôi xử lý văn bản chỉ để tạo âm thanh, phụ đề và vận hành dịch vụ. File âm thanh bạn tạo được dùng cho mục đích cá nhân và thương mại (quảng cáo, video kiếm tiền, sản phẩm bán ra) trong phạm vi điều khoản này và giấy phép của mô hình. Chúng tôi không nhận quyền sở hữu với nội dung của bạn và không dùng văn bản của bạn để huấn luyện mô hình. Cách chúng tôi xử lý dữ liệu được nêu trong <a href="bao-mat.html">Chính sách bảo mật</a>.</p>
+      <p>Bạn giữ mọi quyền với văn bản mình gửi và cần có quyền hợp pháp để dùng văn bản đó. Bạn cho phép chúng tôi xử lý văn bản chỉ để tạo âm thanh, phụ đề và vận hành dịch vụ. File âm thanh bạn tạo được dùng cho mục đích cá nhân và thương mại (quảng cáo, video kiếm tiền, ứng dụng, sản phẩm bán ra) trong phạm vi điều khoản này và giấy phép của mô hình. Chúng tôi không nhận quyền sở hữu với nội dung của bạn và không dùng văn bản của bạn để huấn luyện mô hình. Cách chúng tôi xử lý dữ liệu được nêu trong <a href="bao-mat.html">Chính sách bảo mật</a>.</p>
 
       <h2>7. Tạm ngưng và chấm dứt</h2>
       <p>Chúng tôi có thể chặn địa chỉ IP, khoá hoặc thu hồi API key nếu bạn vi phạm mục 5, gây nguy hại cho hệ thống hoặc khi pháp luật yêu cầu. Với vi phạm nghiêm trọng (lừa đảo, mạo danh, nội dung xâm hại trẻ em), chúng tôi chấm dứt ngay, không hoàn tiền và có thể cung cấp thông tin cho cơ quan có thẩm quyền. Bạn có thể ngừng dùng dịch vụ và huỷ gói bất kỳ lúc nào.</p>
@@ -101,29 +107,17 @@
 
       <h2>11. Luật áp dụng và liên hệ</h2>
       <p>Điều khoản này tuân theo pháp luật Việt Nam. Khi có tranh chấp, hai bên ưu tiên thương lượng; nếu không thành, tranh chấp được giải quyết tại toà án có thẩm quyền ở Việt Nam. Mọi câu hỏi xin gửi tới <a href="mailto:support@dattts.com">support@dattts.com</a>.</p>
-
-      <section class="en" lang="en" aria-labelledby="en-sum">
-        <h2 id="en-sum">Summary in English</h2>
-        <ul>
-          <li>DatTTS (dattts.com) is a Vietnamese text-to-speech web app and API operated by an individual operator, [Tên chủ sở hữu / doanh nghiệp], in Vietnam.</li>
-          <li>Plans: Free trial 20,000 characters/day per IP; Personal 1,000,000 characters/month; “Unlimited” is fair use, capped at 20,000,000 characters/month per key.</li>
-          <li><b>Polar Software Inc. is our Merchant of Record and reseller.</b> Polar processes all payments (cards, Apple Pay, Google Pay), handles sales tax/VAT, issues invoices and receipts, and processes refunds. Prices are in USD. Subscriptions renew until cancelled in the Polar customer portal.</li>
-          <li>Your API key is a Polar-issued license key; keep it secret. It is revoked automatically when the subscription ends.</li>
-          <li>Prohibited: impersonating real people without consent, fraud and scams, deceptive robocalls, illegal or abusive content, misinformation, abuse of quotas or infrastructure. Generated audio may carry an inaudible AI watermark.</li>
-          <li>You keep rights to your text and may use generated audio commercially. Speech is generated with VieNeu-TTS by Phạm Nguyễn Ngọc Bảo (Apache-2.0 license). We do not train models on your text.</li>
-          <li>Service is provided “as is”; liability is limited to fees paid in the prior 3 months. Governed by Vietnamese law. Contact: <a href="mailto:support@dattts.com">support@dattts.com</a>.</li>
-        </ul>
-      </section>
     </article>
   </main>
 
   <footer>
     <span>© 2026 DatTTS · dattts.com</span>
-    <span>Giọng đọc tạo bởi <a href="https://huggingface.co/pnnbao-ump/VieNeu-TTS-v3-Turbo" rel="noopener">VieNeu-TTS by Phạm Nguyễn Ngọc Bảo</a> (Apache-2.0)</span>
-    <nav class="footlinks" aria-label="Chính sách"><a href="dieu-khoan.html">Điều khoản</a><a href="bao-mat.html">Bảo mật</a><a href="hoan-tien.html">Hoàn tiền</a><a href="mailto:support@dattts.com">support@dattts.com</a></nav>
+    <span><span data-i18n="footer.credit">Giọng đọc:</span> <a href="https://huggingface.co/pnnbao-ump/VieNeu-TTS-v3-Turbo" rel="noopener">VieNeu-TTS</a> <span data-i18n="footer.creditBy">của</span> <span lang="vi">Phạm Nguyễn Ngọc Bảo</span> (Apache-2.0)</span>
+    <nav class="footlinks" aria-label="Chính sách" data-i18n-attr="aria-label:footer.aria"><a href="terms.html" data-href-vi="dieu-khoan.html" data-i18n="footer.terms">Điều khoản</a><a href="privacy.html" data-href-vi="bao-mat.html" data-i18n="footer.privacy">Bảo mật</a><a href="refund.html" data-href-vi="hoan-tien.html" data-i18n="footer.refund">Hoàn tiền</a><a href="mailto:support@dattts.com">support@dattts.com</a></nav>
   </footer>
 </div>
 
+<script src="i18n.js"></script>
 <script src="config.js"></script>
 <script src="site.js"></script>
 </body>

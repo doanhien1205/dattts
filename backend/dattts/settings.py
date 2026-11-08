@@ -101,12 +101,18 @@ class Settings:
         return bool(self.polar_product(plan) and self.polar_benefit(plan))
 
     def billing_missing(self) -> list[str]:
-        """Biến POLAR_* còn thiếu (rỗng = cấu hình đủ). Không có token → [] (billing tắt có chủ ý)."""
+        """Biến POLAR_* còn thiếu (rỗng = cấu hình đủ). Không có token → [] (billing tắt có chủ ý).
+
+        POLAR_WEBHOOK_SECRET không chặn bán hàng nhưng thiếu nó thì mọi webhook bị 503 (thu hồi key không xoá
+        được cache, Polar có thể tự tắt endpoint) → vẫn báo để log khởi động và polar_smoke.py cảnh báo.
+        """
         if not self.polar_access_token:
             return []
         missing = []
         if not self.polar_organization_id:
             missing.append("POLAR_ORGANIZATION_ID")
+        if not self.polar_webhook_secret:
+            missing.append("POLAR_WEBHOOK_SECRET")
         for plan in PAID_PLANS:
             if not self.polar_product(plan):
                 missing.append(f"POLAR_PRODUCT_{plan.upper()}")

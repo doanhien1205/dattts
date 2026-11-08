@@ -257,8 +257,8 @@ MESSAGES: dict[str, dict[str, str]] = {
     },
     # ── billing ──
     "billing_disabled": {
-        "en": "Pro plans are coming soon. Leave your email on the pricing section to hear first.",
-        "vi": "Gói trả phí sắp mở bán. Bạn để lại email ở bảng giá để được báo sớm nhé.",
+        "en": "Pro is coming soon. Join the waitlist in the Pricing section on dattts.com and we’ll email you when it opens.",
+        "vi": "Gói Pro sắp mở bán. Bạn để lại email trong danh sách chờ ở mục Bảng giá trên dattts.com, chúng tôi sẽ báo khi gói mở nhé.",
     },
     "billing_disabled.plan": {
         "en": "This plan isn't on sale yet. Please check back later.",

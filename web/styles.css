@@ -415,10 +415,11 @@ footer{border-top:1px solid var(--line);padding-block:28px 40px;display:flex;jus
 .cycle label.off>span{text-decoration:line-through;opacity:.6}
 .cycle .mini{font-style:normal;font-family:var(--f-mono);font-size:11px;font-weight:600;border-radius:999px;padding:1px 6px;background:var(--jade-soft);color:var(--jade)}
 .cycle input:checked+span .mini{background:rgba(255,255,255,.22);color:inherit}
-@media (max-width:420px){.cycle{display:grid;width:100%}.cycle label>span{padding:8px 6px;justify-content:center;font-size:14px;gap:4px}}
+@media (max-width:480px){.cycle{display:grid;width:100%;grid-template-columns:repeat(3,minmax(0,1fr))}.cycle label{min-width:0}.cycle label>span{height:100%;padding:6px 4px;justify-content:center;flex-wrap:wrap;text-align:center;font-size:14px;gap:2px 4px;white-space:normal;line-height:1.25}}
 .plan .tags{display:flex;gap:6px;flex-wrap:wrap;min-height:0}
 .plan .tags:not(:has(.tag:not([hidden]))){display:none}
 .plan .tag.save{background:var(--jade-soft);color:var(--jade);box-shadow:inset 0 0 0 1px var(--jade)}
 .per-note{margin:-6px 0 0;font-size:14px;color:var(--muted)}
 .bigout small.sub{display:block;margin-top:8px;font-size:15px;line-height:1.4}
 .calc-out .vnd{margin:-6px 0 0}
+.doc .langnote{font-size:14px;color:var(--muted);background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin:0 0 20px}

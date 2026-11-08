@@ -56,6 +56,8 @@ class FakePolar:
         self.prices = {PROD_W: 199, PROD_M: 499, PROD_Y: 4999}
         self.intervals = {PROD_W: "week", PROD_M: "month", PROD_Y: "year"}
         self.checkout_fail: int | None = None  # mã lỗi riêng cho POST /v1/checkouts/
+        self.archived: set[str] = set()        # sản phẩm đã lưu trữ (archived)
+        self.custom_price: set[str] = set()    # sản phẩm chỉ có giá "khách tự trả" (không có giá cố định)
 
     def add_key(self, key, benefit=BEN_M, lkid="lk-1", customer=CUST, email="an.nguyen@gmail.com"):
         self.keys[key] = {"id": lkid, "status": "granted", "benefit_id": benefit, "customer_id": customer,
@@ -89,10 +91,11 @@ class FakePolar:
                                              "customer_email": "an.nguyen@gmail.com"})
         if m == "GET" and p.startswith("/v1/products/"):
             pid = p.rsplit("/", 1)[1]
-            return httpx.Response(200, json={"id": pid, "name": "Gói", "is_archived": False,
+            prices = ([{"amount_type": "custom", "price_currency": "usd"}] if pid in self.custom_price else
+                      [{"amount_type": "fixed", "price_amount": self.prices[pid], "price_currency": "usd"}])
+            return httpx.Response(200, json={"id": pid, "name": "Gói", "is_archived": pid in self.archived,
                                              "recurring_interval": self.intervals[pid], "recurring_interval_count": 1,
-                                             "prices": [{"amount_type": "fixed", "price_amount": self.prices[pid],
-                                                         "price_currency": "usd"}]})
+                                             "prices": prices})
         if m == "POST" and p == "/v1/license-keys/validate":
             body = json.loads(request.content)
             if body.get("organization_id") != ORG:  # Polar: organization_id bắt buộc (uuid4)
@@ -164,7 +167,9 @@ def test_settings_from_env():
     assert (s.plan_pro_week_chars, s.plan_pro_month_chars, s.plan_pro_year_monthly_chars) == (7, 5, 9)
     assert [s.plan_chars(p) for p in ("pro_week", "pro_month", "pro_year")] == [7, 5, 9]
     assert s.polar_product("pro_week") == PROD_W and s.polar_benefit("pro_year") == BEN_Y
-    assert s.polar_product("personal") is None and s.billing_missing() == []
+    # Thiếu POLAR_WEBHOOK_SECRET: vẫn bán (billing bật) nhưng phải được cảnh báo (webhook sẽ 503)
+    assert s.polar_product("personal") is None and s.billing_missing() == ["POLAR_WEBHOOK_SECRET"]
+    assert s.billing_enabled
     d = Settings.from_env({})
     assert (d.plan_pro_week_chars, d.plan_pro_month_chars, d.plan_pro_year_monthly_chars) == \
         (250_000, 1_000_000, 1_000_000)
@@ -362,7 +367,7 @@ def test_plans_enabled_with_prices(make_bclient, fake):
     assert month["price"] == 499 and month["interval"] == "month" and month["chars"] == 1_000_000
     assert month["period"] == "month" and month["popular"] is True and month["save_percent"] == 37
     assert year["price"] == 4999 and year["interval"] == "year" and year["chars"] == 1_000_000
-    assert year["period"] == "month" and year["popular"] is False and year["save_percent"] == 17
+    assert year["period"] == "month" and year["popular"] is False and year["save_percent"] == 16
     assert "accept-language" in r.headers["vary"].lower()
     n = len(fake.requests)
     vi = c.get("/api/billing/plans", headers={"Accept-Language": "vi-VN,vi;q=0.9"}).json()
@@ -373,9 +378,10 @@ def test_plans_enabled_with_prices(make_bclient, fake):
 
 def test_save_percent_math():
     assert B.save_percent(499, 199, 4) == 37      # 1 − 4,99/7,96 = 37,31 %
-    assert B.save_percent(4999, 499, 12) == 17    # 1 − 49,99/59,88 = 16,52 % → 17
+    assert B.save_percent(4999, 499, 12) == 16    # 1 − 49,99/59,88 = 16,52 % → làm tròn XUỐNG 16
     assert B.save_percent(450, 100, 5) == 10      # đúng 10 %
-    assert B.save_percent(995, 100, 10) == 1      # 0,5 % → làm tròn lên 1
+    assert B.save_percent(985, 100, 10) == 1      # 1,5 % → 1
+    assert B.save_percent(995, 100, 10) is None   # 0,5 % → 0 → không hiện
     assert B.save_percent(996, 100, 10) is None   # 0,4 % → 0 → không hiện
     assert B.save_percent(400, 100, 4) is None    # không rẻ hơn
     assert B.save_percent(500, 100, 4) is None    # đắt hơn
@@ -400,7 +406,7 @@ def test_plan_unavailable_when_one_product_missing(make_bclient, fake, caplog):
     assert plans["pro_week"]["interval"] == "week"  # chu kỳ mặc định khi không có sản phẩm
     assert plans["pro_month"]["available"] is True and plans["pro_month"]["price"] == 499
     assert plans["pro_month"]["save_percent"] is None  # thiếu giá tuần → không tính được
-    assert plans["pro_year"]["available"] is True and plans["pro_year"]["save_percent"] == 17
+    assert plans["pro_year"]["available"] is True and plans["pro_year"]["save_percent"] == 16
     assert not any(PROD_W in str(r.url) for r in fake.requests)
     r = c.post("/api/billing/checkout", json={"plan": "pro_week"})
     assert r.status_code == 503 and err(r) == "billing_disabled"
@@ -1015,4 +1021,186 @@ def test_billing_errors_bilingual(make_bclient, fake):
     assert r.json()["error"]["message"].startswith("Invalid API key")
     d = make_bclient(polar_access_token=None)
     r = d.post("/api/billing/checkout", json={"plan": "pro_month"}, headers={"Accept-Language": "fr-FR"})
-    assert r.status_code == 503 and r.json()["error"]["message"].startswith("Pro plans are coming soon")
+    assert r.status_code == 503 and r.json()["error"]["message"].startswith("Pro is coming soon. Join the waitlist")
+
+
+def test_cached_key_with_removed_plan_is_revalidated(ctx, fake):
+    settings, store, client = ctx
+    fake.add_key("DATTTS-OLD", benefit=BEN_Y, lkid="lk-old")
+    h = hashlib.sha256(b"DATTTS-OLD").hexdigest()
+    t0 = 1_800_000_000.0
+    store.kv_set(f"lk:{h}", {"ok": True, "at": t0, "exp": t0 + 600,
+                             "info": {"kind": "polar", "license_key_id": "lk-old", "customer_id": CUST,
+                                      "email": None, "plan": "personal"}})
+    assert B.resolve_api_key("DATTTS-OLD", settings, store, client, now=t0 + 1)["plan"] == "pro_year"
+    assert len(fake.calls("/v1/license-keys/validate")) == 1
+
+
+# ───────────────────────────── vòng review 3 ─────────────────────────────
+
+
+def test_archived_or_unpriced_product_is_not_available(make_bclient, fake, caplog):
+    fake.archived.add(PROD_Y)
+    fake.custom_price.add(PROD_W)
+    c = make_bclient()
+    with caplog.at_level("ERROR", logger="dattts.billing"):
+        plans = {p["id"]: p for p in c.get("/api/billing/plans").json()["plans"]}
+    assert "archived" in caplog.text
+    assert plans["pro_year"]["available"] is False and plans["pro_year"]["price"] is None
+    assert plans["pro_week"]["available"] is False and plans["pro_week"]["price"] is None
+    assert plans["pro_month"]["available"] is True and plans["pro_month"]["price"] == 499
+    # Không gửi sản phẩm đã lưu trữ sang Polar (chắc chắn bị từ chối) — báo "chưa bán" thay vì 503 lỗi Polar
+    r = c.post("/api/billing/checkout", json={"plan": "pro_year"})
+    assert r.status_code == 503 and err(r) == "billing_disabled"
+    assert fake.calls("/v1/checkouts/") == []
+    assert c.post("/api/billing/checkout", json={"plan": "pro_month"}).status_code == 200
+
+
+def test_transient_price_error_keeps_plan_buyable(make_bclient, fake):
+    fake.fail = 500
+    c = make_bclient()
+    plans = {p["id"]: p for p in c.get("/api/billing/plans").json()["plans"]}
+    assert all(plans[p]["available"] is True and plans[p]["price"] is None for p in ("pro_week", "pro_month", "pro_year"))
+    fake.fail = None
+    assert c.post("/api/billing/checkout", json={"plan": "pro_year"}).status_code == 200
+
+
+def test_missing_webhook_secret_is_warned_but_billing_stays_on(make_bclient, caplog):
+    with caplog.at_level("ERROR", logger="dattts.billing"):
+        c = make_bclient(polar_webhook_secret=None)
+    assert "POLAR_WEBHOOK_SECRET" in caplog.text and "webhook" in caplog.text
+    assert c.settings.billing_enabled and c.settings.billing_missing() == ["POLAR_WEBHOOK_SECRET"]
+    assert c.get("/api/billing/plans").json()["enabled"] is True
+    body = _event("subscription.revoked")
+    assert c.post("/api/billing/webhook", content=body, headers=sign(body, NEW_SECRET)).status_code == 503
+    # Đủ biến → không cảnh báo gì
+    assert Settings.from_env({}, **POLAR_ENV).billing_missing() == []
+
+
+@pytest.mark.parametrize("etype", ["benefit_grant.updated", "order.refunded", "refund.created", "refund.updated"])
+def test_rotation_and_refund_events_invalidate_key_cache(make_bclient, fake, etype):
+    c = make_bclient()
+    fake.add_key("DATTTS-ROT")
+    assert c.get("/api/me", headers={"X-API-Key": "DATTTS-ROT"}).status_code == 200
+    del fake.keys["DATTTS-ROT"]  # Polar: key đã đổi / đã thu hồi sau hoàn tiền
+    assert c.get("/api/me", headers={"X-API-Key": "DATTTS-ROT"}).status_code == 200  # còn trong cache
+    body = _event(etype)
+    r = c.post("/api/billing/webhook", content=body, headers=sign(body, NEW_SECRET, "rot-" + etype))
+    assert r.status_code == 202 or r.status_code == 200
+    r = c.get("/api/me", headers={"X-API-Key": "DATTTS-ROT"})
+    assert r.status_code == 401 and err(r) == "invalid_api_key"
+
+
+def test_rate_limit_cannot_keep_a_rotated_key_alive(tmp_path, fake):
+    """Người cầm key lộ tự kích hoạt giới hạn tần suất (gửi key rác) → cache cũ chỉ còn dùng ≤ 15 phút."""
+    settings = Settings.from_env({}, **POLAR_ENV)
+    store = LocalStore(str(tmp_path / "kv"))
+    client = B.PolarClient.from_settings(settings, transport=httpx.MockTransport(fake))
+    fake.add_key("DATTTS-LEAK")
+    t0 = 1_800_000_000.0
+    B.resolve_api_key("DATTTS-LEAK", settings, store, client, now=t0)
+    del fake.keys["DATTTS-LEAK"]  # khách đã đổi key trong cổng Polar
+
+    def deny():
+        raise B.BillingError("rate_limited", status=429)
+
+    assert B.resolve_api_key("DATTTS-LEAK", settings, store, client, now=t0 + 14 * 60, on_miss=deny)["plan"]
+    for dt in (16 * 60, 3600, 80_000):
+        with pytest.raises(B.BillingError) as e:
+            B.resolve_api_key("DATTTS-LEAK", settings, store, client, now=t0 + dt, on_miss=deny)
+        assert e.value.status == 429
+    with pytest.raises(B.BillingError) as e:  # không bị chặn → hỏi Polar → key cũ bị từ chối
+        B.resolve_api_key("DATTTS-LEAK", settings, store, client, now=t0 + 16 * 60)
+    assert e.value.status == 401
+
+
+def _billing(tmp_path, fake):
+    settings = Settings.from_env({}, **POLAR_ENV)
+    store = LocalStore(str(tmp_path / "kv"))
+    client = B.PolarClient.from_settings(settings, transport=httpx.MockTransport(fake))
+    return B.Billing(settings, store, client), store
+
+
+def test_usage_ledger_survives_kv_expiry_and_spans_periods(tmp_path, fake):
+    b, store = _billing(tmp_path, fake)
+    who = {"kind": "polar", "license_key_id": "lk-9", "customer_id": CUST, "plan": "pro_month"}
+    oct25 = _vn(2026, 10, 25, 10, 0)
+    nov2 = _vn(2026, 11, 2, 10, 0)
+    b.charge(who, 900_000, now=oct25)
+    b.charge(who, 1_000, now=nov2)
+    # modal.Dict xoá mục sau 7 ngày không dùng: mất bucket tháng 10 và cả sổ cái trong KV
+    for k in ("usage:lk-9:2026-10", "ledger:lk-9", f"ledger_cust:{CUST}"):
+        store.kv_delete(k)
+    led = b.ledger("lk-9")  # khôi phục từ blob
+    assert led["total"] == 901_000 and led["first_at"].startswith("2026-10-25")
+    assert led["days"] == {"2026-10-25": 900_000, "2026-11-02": 1_000}
+    assert led["periods"] == {"2026-10": 900_000, "2026-11": 1_000}
+    assert "email" not in led and led["customer_id"] == CUST
+    # Tra cứu theo khách, tính từ ngày thanh toán (vắt qua hai tháng)
+    j = b.admin_usage(customer_id=CUST, since="2026-10-25")
+    assert [k["used_since"] for k in j["keys"]] == [901_000]
+    assert j["keys"][0]["percent_of_period"] == 90.1 and j["keys"][0]["period_limit"] == 1_000_000
+    assert b.admin_usage(license_key_id="lk-9", since="2026-11-01")["keys"][0]["used_since"] == 1_000
+    with pytest.raises(B.BillingError):
+        b.admin_usage(license_key_id="lk-9", since="25/10/2026")
+    with pytest.raises(B.BillingError):
+        b.admin_usage()
+
+
+def test_period_quota_not_reset_when_bucket_expires_mid_period(tmp_path, fake):
+    b, store = _billing(tmp_path, fake)
+    who = {"kind": "polar", "license_key_id": "lk-q", "customer_id": CUST, "plan": "pro_month"}
+    b.charge(who, 999_000, now=_vn(2026, 11, 2, 10, 0))
+    store.kv_delete("usage:lk-q:2026-11")  # hết hạn sau 7 ngày không dùng
+    later = _vn(2026, 11, 20, 10, 0)
+    assert b.usage(who, now=later)["used"] == 999_000
+    with pytest.raises(B.BillingError) as e:
+        b.charge(who, 5_000, now=later)
+    assert e.value.status == 429
+    b.charge(who, 1_000, now=later)
+    assert b.usage(who, now=later)["remaining"] == 0
+
+
+def test_failed_job_refund_updates_ledger(tmp_path, fake):
+    b, store = _billing(tmp_path, fake)
+    who = {"kind": "polar", "license_key_id": "lk-r", "customer_id": CUST, "plan": "pro_week"}
+    t = _vn(2026, 11, 4, 9, 0)
+    uk = b.charge(who, 5_000, now=t)
+    b.refund(uk, 5_000, now=t)
+    led = b.ledger("lk-r")
+    assert led["total"] == 0 and sum(led["days"].values()) == 0 and store.kv_get(uk) == 0
+    # run_job (máy chủ dựng âm thanh) hoàn quota qua cùng đường
+    from dattts.store import run_job
+    from dattts.render import RenderError, RenderRequest
+    uk = b.charge(who, 700, now=t)
+    store.kv_set("job:j1", {"job_id": "j1", "status": "queued", "quota_key": uk, "charged": 700})
+
+    def boom(req, progress):
+        raise RenderError("engine_error", status=500)
+
+    run_job(store, "j1", RenderRequest(text="x", voice="truc-ly"), boom)
+    assert b.ledger("lk-r")["total"] == 0 and store.kv_get(uk) == 0
+
+
+def test_admin_usage_endpoint(make_bclient, fake):
+    c = make_bclient(admin_token="adm-123")
+    fake.add_key("DATTTS-U1", benefit=BEN_M, lkid="u1")
+    assert c.post("/api/tts", json={"text": "Một hai ba."}, headers={"X-API-Key": "DATTTS-U1"}).status_code == 200
+    h = {"Authorization": "Bearer adm-123"}
+    assert c.get("/api/admin/usage?license_key_id=u1").status_code == 401
+    r = c.get("/api/admin/usage?license_key_id=u1", headers=h)
+    assert r.status_code == 200
+    k = r.json()["keys"][0]
+    assert k["license_key_id"] == "u1" and k["used_since"] == k["total"] > 0 and k["plan"] == "pro_month"
+    r = c.get(f"/api/admin/usage?customer_id={CUST}", headers=h)
+    assert [x["license_key_id"] for x in r.json()["keys"]] == ["u1"]
+    assert c.get("/api/admin/usage", headers=h).status_code == 400
+    assert c.get("/api/admin/usage?license_key_id=u1&since=bad", headers=h).status_code == 400
+    assert c.get("/api/admin/usage?license_key_id=nope", headers=h).json()["keys"] == []
+
+
+def test_vi_voice_description_names_the_region():
+    from dattts.engine import FakeEngine as FE
+    desc = {v["name"]: v["description"] for v in FE().voices()}
+    assert desc["Thùy Dung"] == "Nữ · miền Nam · Phong cách tin tức"
+    assert desc["Quang Sơn"] == "Nam · miền Trung · Phong cách tự nhiên"

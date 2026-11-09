@@ -282,3 +282,29 @@ API thay đổi:
 - Trang pháp lý: bản tiếng Anh là chính `terms.html`, `privacy.html`, `refund.html`; bản tiếng Việt giữ ở `dieu-khoan.html`, `bao-mat.html`, `hoan-tien.html`; hai bản liên kết qua lại; nội dung cập nhật theo gói Pro tuần/tháng/năm (hoàn tiền: trong 14 ngày nếu dùng < 10% hạn mức của kỳ đầu; gói tuần: trong 3 ngày). Giữ placeholder tên pháp lý `[Legal name]` / `[Tên pháp lý]`.
 - `checkout-success.html` song ngữ.
 - SEO: `<link rel="alternate" hreflang>` không áp dụng được với một URL đổi ngôn ngữ phía client → chỉ cần meta description/OG tiếng Anh, `og:image` có thể bỏ; `canonical` https://dattts.com/.
+
+---
+
+# Phần 4 — Triển khai: Modal (Starter) + Cloudflare Pages phía trước
+
+Lý do: tên miền riêng trên Modal cần gói Team ($250/tháng). Trên Starter, web function chỉ có URL `https://<workspace>--dattts-web.modal.run`.
+Kiến trúc production:
+```
+Trình duyệt / Polar webhook ──► https://dattts.com (Cloudflare Pages)
+   ├─ tệp tĩnh: thư mục web/
+   └─ /api/*  ──► Pages Function functions/api/[[path]].js ──► MODAL_ORIGIN (https://…--dattts-web.modal.run)/api/*
+```
+## Pages Function (`functions/api/[[path]].js`, ở GỐC repo vì `wrangler pages deploy web` tìm ./functions theo thư mục chạy lệnh)
+- Biến môi trường Pages: `MODAL_ORIGIN` (bắt buộc), `PROXY_SHARED_SECRET` (bắt buộc, chuỗi ngẫu nhiên ≥ 32 ký tự, giống hệt trong Modal secret).
+- Chuyển nguyên method, path, query, body (stream, KHÔNG đọc/biến đổi — chữ ký webhook Polar tính trên raw body), mọi header trừ hop-by-hop và `host`; thêm `X-DatTTS-Proxy-Secret: <PROXY_SHARED_SECRET>` và `X-DatTTS-Client-IP: <CF-Connecting-IP>`; xoá mọi `X-DatTTS-*` khách tự gửi trước khi thêm.
+- Trả nguyên status/header/body (stream; giữ `Range`/206, `Content-Disposition`, `Vary`, CORS). Không cache `/api/*` ở edge trừ `/api/files/*` (đã có Cache-Control immutable — để Cloudflare tôn trọng header gốc).
+- Lỗi kết nối tới Modal → 502 JSON `{"error":{"code":"upstream_unavailable","message":…}}` (EN/VI theo Accept-Language).
+- Timeout: Pages Functions không giới hạn thời gian chờ upstream theo wall-clock nhưng /api/tts đồng bộ có thể mất vài chục giây khi container lạnh — đảm bảo không có timeout tự đặt quá ngắn.
+## Backend
+- Env mới `PROXY_SHARED_SECRET`: nếu đặt và header `X-DatTTS-Proxy-Secret` khớp (so sánh hằng thời gian) → IP khách = `X-DatTTS-Client-IP` (validate là IPv4/IPv6 hợp lệ). Nếu không khớp/không có → quay về logic hiện tại (TRUST_PROXY/XFF). Khi `PROXY_SHARED_SECRET` đặt và `REQUIRE_PROXY=1` → mọi request /api/* không có secret đúng bị 403 `direct_access_forbidden` (trừ /api/health), để không ai vượt quota bằng cách gọi thẳng URL modal.run. Thông điệp lỗi EN/VI trong messages.py.
+- `PUBLIC_BASE_URL=https://dattts.com`, `ALLOWED_ORIGINS` mặc định đã có dattts.com.
+## Script & tài liệu
+- `scripts/deploy_modal.sh`: kiểm `modal` đã đăng nhập; tạo/cập nhật secret `dattts` từ file dotenv truyền vào (`--env-file`, mặc định `~/dattts-secret.env`; từ chối nếu file nằm trong repo hoặc quyền rộng hơn 600); `modal run backend/modal_app.py::download_models` nếu `--first-run`; `modal deploy backend/modal_app.py`; in URL web; smoke test `/api/health`, `/api/voices` (25), `/api/billing/plans`.
+- `scripts/deploy_pages.sh`: `npx wrangler@<phiên bản cố định> pages deploy web --project-name dattts` chạy từ gốc repo (để nhận ./functions); nhắc đặt biến MODAL_ORIGIN/PROXY_SHARED_SECRET (`wrangler pages secret put`).
+- `deploy/secret.env.example`: mẫu đầy đủ mọi biến (không bí mật thật), gồm PROXY_SHARED_SECRET, REQUIRE_PROXY=1, TRUST_PROXY.
+- README: mục "Triển khai lên Modal + Cloudflare" viết lại từng bước cho chủ shop (tiếng Việt), kèm chi phí ước tính (Starter $0 + compute; $30 credit/tháng; CPU ~$0.047/core-giờ, RAM ~$0.008/GiB-giờ → worker 4 CPU + 6 GiB ≈ $0.24/giờ khi đang chạy, tự tắt sau 5 phút rảnh).

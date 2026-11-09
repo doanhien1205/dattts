@@ -437,7 +437,9 @@
     const d = dictEntries(); if (d.length) b.dictionary = d;
     return b;
   }
-  // Ngắn → /api/tts; dài (hoặc máy chủ báo too_long) → /api/jobs + hỏi tiến độ mỗi giây.
+  // Ngắn → /api/tts; dài (hoặc máy chủ báo too_long) → /api/jobs + hỏi tiến độ: 1 s cho 10 lần đầu rồi giãn dần
+  // tới 10 s — mỗi lần hỏi là 1 request Pages Functions (gói Free: 100.000/ngày, chung cả site).
+  const pollDelay = (i) => (i < 10 ? 1000 : Math.min(10000, (i - 8) * 1000));
   async function synthesize(body, onProgress) {
     if (countChars(body.text) <= SYNC_MAX) {
       onProgress && onProgress({ status: 'sync' });
@@ -447,8 +449,8 @@
     const job = await api('/api/jobs', { method: 'POST', body });
     onProgress && onProgress({ status: job.status || 'queued', progress: 0 });
     let misses = 0;
-    for (;;) {
-      await sleep(1000);
+    for (let i = 0; ; i++) {
+      await sleep(pollDelay(i));
       let s;
       try { s = await api('/api/jobs/' + encodeURIComponent(job.job_id)); misses = 0; }
       catch (e) { if ((e.code === 'network' || e.status >= 500) && ++misses < 4) continue; throw e; }

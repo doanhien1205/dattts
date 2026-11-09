@@ -1,27 +1,24 @@
-"""Triển khai DatTTS trên Modal (modal 1.x).
+"""Triển khai DatTTS trên Modal (modal 1.x) — phía sau Cloudflare Pages (SPEC Phần 4).
 
-    cd backend
-    modal secret create dattts ADMIN_TOKEN=... API_KEYS=key1,key2   # bắt buộc tạo trước (có thể để trống giá trị)
-    # Thanh toán Polar (tuỳ chọn; thiếu POLAR_ACCESS_TOKEN → billing tắt, web hiện "Coming soon").
-    # Danh sách đầy đủ + ID thật của gói Pro: backend/.env.example. Token/whsec CHỈ đặt trong secret.
-    modal secret create dattts --force ADMIN_TOKEN=... API_KEYS=... \
-        PUBLIC_BASE_URL=https://dattts.com POLAR_SERVER=production POLAR_ACCESS_TOKEN=polar_oat_... \
-        POLAR_ORGANIZATION_ID=cd16dd37-dd25-4e92-aaaa-23509784d129 POLAR_WEBHOOK_SECRET=whsec_... \
-        POLAR_PRODUCT_PRO_WEEK=3d54ccce-5b59-4903-a23b-18fd8c9e6fe1 \
-        POLAR_BENEFIT_PRO_WEEK=e02132d4-8b7c-4779-a271-cf778cada689 \
-        POLAR_PRODUCT_PRO_MONTH=5cdb0d3a-edf1-46aa-ba4f-b1e4303e60bf \
-        POLAR_BENEFIT_PRO_MONTH=de10e5c4-5357-4ec8-81ca-5b2848226ac0 \
-        POLAR_PRODUCT_PRO_YEAR=673f4798-5c0b-4a6f-a6bc-002054bcd621 \
-        POLAR_BENEFIT_PRO_YEAR=170cee60-1cd2-428e-8e46-a50e753189fb
-    # Tuỳ chọn: PLAN_PRO_WEEK_CHARS=250000 PLAN_PRO_MONTH_CHARS=1000000 PLAN_PRO_YEAR_MONTHLY_CHARS=1000000
-    # Webhook Polar: https://<tên miền>/api/billing/webhook (định dạng Raw; sự kiện subscription.*, order.paid,
-    # benefit_grant.*, customer.state_changed). Chỉ hàm ``web`` dùng các biến POLAR_*; worker không gọi Polar.
-    modal run modal_app.py::download_models                          # tải mô hình vào Volume (một lần)
-    modal deploy modal_app.py                                        # web + worker
+Cách nhanh nhất (từ gốc repo): ``scripts/deploy_modal.sh --env-file ~/dattts-secret.env [--first-run]``.
+Làm tay:
+
+    cp deploy/secret.env.example ~/dattts-secret.env && chmod 600 ~/dattts-secret.env   # điền giá trị
+    modal secret create dattts --force --from-dotenv ~/dattts-secret.env               # ghi đè TOÀN BỘ secret
+    modal run backend/modal_app.py::download_models                                   # tải mô hình (một lần)
+    modal deploy backend/modal_app.py                                                 # web + worker
+
+Secret ``dattts`` (đọc bởi ``Settings.from_env()`` trong hàm ``web``): ADMIN_TOKEN, API_KEYS, PUBLIC_BASE_URL,
+POLAR_* (thiếu POLAR_ACCESS_TOKEN → billing tắt), và cho proxy Cloudflare Pages:
+    PROXY_SHARED_SECRET=<openssl rand -hex 32>   giống hệt biến cùng tên ở Pages; khớp → tin X-DatTTS-Client-IP
+    REQUIRE_PROXY=1                              chặn /api/* gọi thẳng URL modal.run (403), trừ /api/health
+Danh sách đầy đủ: deploy/secret.env.example. Webhook Polar: https://dattts.com/api/billing/webhook (định dạng Raw;
+đi qua Pages như mọi /api/*). Chỉ hàm ``web`` dùng POLAR_*/PROXY_*; worker không nhận request HTTP.
 
 Tuỳ chọn khi deploy (đọc ở máy chạy lệnh `modal deploy`):
     DATTTS_GPU=T4          worker dùng GPU (PyTorch, cài thêm vieneu[cuda])
-    DATTTS_DOMAINS=dattts.com,www.dattts.com   gắn tên miền riêng cho web (cần gói Modal hỗ trợ custom domain)
+    DATTTS_DOMAINS=dattts.com,www.dattts.com   gắn tên miền riêng cho web (cần gói Modal Team — cách thay thế
+                           cho Cloudflare Pages; khi đó không cần PROXY_SHARED_SECRET/REQUIRE_PROXY)
 
 Thành phần:
     - Volume ``dattts-models`` (/models): trọng số VieNeu, tải ở lần đầu rồi commit.
@@ -60,7 +57,7 @@ app = modal.App("dattts")
 
 models_volume = modal.Volume.from_name("dattts-models", create_if_missing=True)
 files_volume = modal.Volume.from_name("dattts-files", create_if_missing=True)
-# ADMIN_TOKEN, API_KEYS, PUBLIC_BASE_URL, POLAR_* — phải tạo trước khi deploy. Secret được gắn vào ``web``
+# ADMIN_TOKEN, API_KEYS, PUBLIC_BASE_URL, POLAR_*, PROXY_SHARED_SECRET, REQUIRE_PROXY — phải tạo trước khi deploy. Secret được gắn vào ``web``
 # (đọc qua ``Settings.from_env()``); không đặt PUBLIC_BASE_URL/POLAR_* trong ``_ENV`` để secret luôn quyết định.
 secret = modal.Secret.from_name("dattts")
 
@@ -297,7 +294,9 @@ def download_models() -> dict:
     cpu=1,
     memory=2048,
     scaledown_window=600,
-    timeout=10 * 60,  # /api/tts chờ worker (có thể khởi động lạnh); mặc định 300 s là sát
+    # /api/tts chờ worker (có thể khởi động lạnh). Lưu ý: riêng mỗi request HTTP vẫn bị Modal cắt ở 150 s và trả
+    # 303 về chính URL để hỏi lại kết quả; proxy Pages (functions/api/[[path]].js) tự theo 303 đó.
+    timeout=10 * 60,
 
     volumes={FILES_DIR: files_volume},
     secrets=[secret],

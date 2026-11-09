@@ -26,7 +26,9 @@ Tổ chức Polar "Dat TTS": `cd16dd37-dd25-4e92-aaaa-23509784d129`. Ba gói Pro
 
 ```
                    Trình duyệt (web/: index.html, app.js, styles.css, config.js)
-                                 │  fetch /api/*   (config.js: DATTTS_API = "" hoặc URL API)
+                                 │  fetch /api/*   (config.js: DATTTS_API = "" — cùng nguồn dattts.com)
+                                 ▼
+          Production: Cloudflare Pages Function functions/api/[[path]].js (proxy → URL modal.run)
                                  ▼
  ┌──────────────────────── dattts/api.py — FastAPI (create_app) ───────────────────────┐
  │  /api/tts  /api/jobs  /api/voices  /api/files  /api/quota  /api/waitlist   +  "/"   │
@@ -58,6 +60,9 @@ Mã nguồn:
 | `backend/dattts/api.py` | HTTP API |
 | `backend/server_local.py` | Chạy máy chủ ở máy local |
 | `backend/modal_app.py` | Triển khai lên Modal |
+| `functions/api/[[path]].js` | Cloudflare Pages Function: proxy `/api/*` từ dattts.com sang Modal |
+| `scripts/deploy_modal.sh`, `scripts/deploy_pages.sh` | Script deploy Modal / Cloudflare Pages (`--help`) |
+| `deploy/secret.env.example` | Mẫu đầy đủ biến của Modal secret `dattts` |
 | `backend/dattts/billing.py` | Polar: checkout, xác thực License Key, quota theo tuần/tháng, webhook |
 | `backend/dattts/messages.py` | Bảng thông báo lỗi tiếng Anh / tiếng Việt |
 | `web/` | Trang tĩnh: studio, bảng giá, danh sách chờ, `checkout-success.html`, trang pháp lý EN (`terms/privacy/refund.html`) và VI (`dieu-khoan/bao-mat/hoan-tien.html`); chuỗi giao diện trong `web/i18n.js` |
@@ -138,6 +143,24 @@ pytest -q -m "not real"      # chỉ test nhanh với FakeEngine
 pytest -q -m real            # chỉ test với mô hình thật
 ```
 
+**Proxy Cloudflare Pages (Node 22, không cần wrangler/mạng)**
+
+```bash
+node scripts/test_proxy.mjs                 # chạy functions/api/[[path]].js với máy chủ echo tại chỗ
+bash -n scripts/deploy_modal.sh scripts/deploy_pages.sh && shellcheck scripts/*.sh   # nếu có shellcheck
+```
+
+Chạy thử cả chuỗi qua runtime Cloudflare thật ở máy local (`wrangler pages dev`):
+
+```bash
+S=$(python -c 'import secrets;print(secrets.token_urlsafe(36))')
+(cd backend && PROXY_SHARED_SECRET=$S REQUIRE_PROXY=1 python server_local.py --port 8765 &)
+(umask 077; printf 'MODAL_ORIGIN=http://127.0.0.1:8765\nPROXY_SHARED_SECRET=%s\n' "$S" > .dev.vars)   # quyền 600; đã nằm trong .gitignore
+npx wrangler@4.151.3 pages dev web --port 8788       # mở http://127.0.0.1:8788
+E2E_BASE=http://127.0.0.1:8788 node scripts/e2e.mjs  # toàn bộ giao diện đi qua proxy
+rm .dev.vars                                          # xong thì xoá
+```
+
 **Kiểm thử đầu-cuối (Playwright, máy chủ thật)**
 
 ```bash
@@ -182,64 +205,160 @@ Script tự bật Polar giả (cổng 8899) và `server_local.py` (cổng 8765) 
 2. **Billing bật, engine VieNeu thật.** Gọi `/api/tts` một lần bằng key Pro năm. Đặt `E2E_REAL=0` để bỏ qua giai đoạn này.
 3. **Billing tắt.** Kiểm tra trang hiện "Coming soon", form chờ vẫn dùng được, checkout trả 503 (thông báo EN/VI).
 
-## Triển khai lên Modal
+## Triển khai lên Modal + Cloudflare
+
+Gói **Modal Starter** (miễn phí, chỉ trả tiền máy chạy) **không** gắn được tên miền riêng — tính năng đó cần gói Team ($250/tháng). Vì vậy DatTTS chạy như sau:
+
+```
+Trình duyệt / webhook Polar ──► https://dattts.com  (Cloudflare Pages, miễn phí)
+   ├─ trang tĩnh: thư mục web/
+   └─ /api/*  ──► Pages Function functions/api/[[path]].js
+                    ──► https://<workspace>--dattts-web.modal.run/api/*   (Modal: FastAPI + worker đọc giọng)
+```
+
+- **Cloudflare Pages** phục vụ trang `web/` và chuyển nguyên mọi request `/api/*` (cả body thô của webhook Polar, tua audio `Range`/206) sang Modal. Pages Function thêm hai header: `X-DatTTS-Proxy-Secret` (mật khẩu chung) và `X-DatTTS-Client-IP` (IP thật của khách, lấy từ Cloudflare). Header `X-DatTTS-*` do khách tự gửi bị xoá trước.
+- **Modal** chỉ tin `X-DatTTS-Client-IP` khi mật khẩu chung đúng (so sánh hằng thời gian), nên quota miễn phí theo IP vẫn đúng. Với `REQUIRE_PROXY=1`, mọi `/api/*` gọi thẳng URL `modal.run` bị chặn **403 `direct_access_forbidden`** (trừ `/api/health`), nên không ai vượt quota bằng cách gọi thẳng Modal.
+- Trang và API cùng nguồn `https://dattts.com`, nên `web/config.js` giữ nguyên `DATTTS_API = ""`.
 
 `backend/modal_app.py` gồm:
 
 - **`TTSWorker`:** 4 CPU, 6 GB RAM, nạp mô hình một lần cho mỗi container. Tắt sau 5 phút không có việc (`scaledown_window=300`).
-- **`web`:** FastAPI cùng trang tĩnh, mỗi container nhận tối đa 50 request đồng thời.
-- **Volume `dattts-models`:** chứa mô hình.
-- **Volume `dattts-files`:** chứa file âm thanh và phụ đề.
-- **Dict `dattts-kv`:** chứa quota, job và danh sách chờ.
+- **`TTSJobWorker`:** chạy job văn bản dài, mỗi container một job.
+- **`web`:** FastAPI cùng trang tĩnh, mỗi container nhận tối đa 50 request đồng thời. Đọc cấu hình từ secret `dattts`.
+- **Volume `dattts-models`:** chứa mô hình. **Volume `dattts-files`:** chứa file âm thanh và phụ đề. **Dict `dattts-kv`:** quota, job, danh sách chờ.
 
-Các bước:
+### Cần chuẩn bị
+
+- Tài khoản [Modal](https://modal.com) (gói Starter) và Python 3.10+ trên máy bạn.
+- Tài khoản [Cloudflare](https://dash.cloudflare.com) (miễn phí) và Node.js 18+ (để chạy `npx wrangler`).
+- Tên miền `dattts.com`.
+- `curl`, `openssl` (có sẵn trên macOS/Linux).
+
+### Bước 1. Tạo file secret (ngoài repo)
 
 ```bash
-# 1. Cài Modal và đăng nhập
-pip install modal
-modal token new                        # mở trình duyệt để xác thực
+cp deploy/secret.env.example ~/dattts-secret.env
+chmod 600 ~/dattts-secret.env
+openssl rand -hex 32     # → dán vào PROXY_SHARED_SECRET
+openssl rand -hex 24     # → dán vào ADMIN_TOKEN
+nano ~/dattts-secret.env # điền mọi giá trị <...> (Polar: xem "Thanh toán với Polar", bước 5–7)
+```
 
-# 2. Tạo secret `dattts` (bắt buộc có trước khi deploy) — lệnh đầy đủ ở mục "Bước 7" phần Polar bên dưới.
-#    Chưa muốn bán hàng thì chỉ cần: modal secret create dattts ADMIN_TOKEN=$(openssl rand -hex 24) API_KEYS=
-#    Nếu trang web đặt ở tên miền khác, thêm ALLOWED_ORIGINS=https://dattts.com,https://www.dattts.com,...
+File này chứa bí mật: **không** để trong thư mục repo, **không** gửi qua chat. Script deploy từ chối file nằm trong repo, file có quyền rộng hơn `600`, hoặc còn giá trị mẫu `<...>`. Chưa muốn bán hàng thì để trống `POLAR_ACCESS_TOKEN` và `POLAR_WEBHOOK_SECRET`. Ba biến quan trọng cho kiến trúc này:
 
-# 3. Tải mô hình vào Volume (chạy một lần, có đọc thử một câu)
-modal run backend/modal_app.py::download_models
+| Biến | Giá trị | Ý nghĩa |
+|---|---|---|
+| `PROXY_SHARED_SECRET` | chuỗi ngẫu nhiên ≥ 32 ký tự | Mật khẩu chung giữa Cloudflare Pages và Modal. **Hai nơi phải giống hệt.** |
+| `REQUIRE_PROXY` | `1` | Chặn gọi thẳng `/api/*` trên URL modal.run (403), trừ `/api/health`. |
+| `TRUST_PROXY` | `1` | Dự phòng: lấy IP từ `X-Forwarded-For` của Modal khi request không qua Pages. |
 
-# 4. Deploy
+### Bước 2. Deploy backend lên Modal
+
+```bash
+pip install modal python-dotenv                # python-dotenv: cần cho `modal secret create --from-dotenv` (modal không tự cài)
+modal token new                                   # mở trình duyệt để đăng nhập (một lần)
+scripts/deploy_modal.sh --first-run               # lần đầu: tạo secret, tải mô hình, deploy, kiểm tra
+# các lần sau (đổi code hoặc secret):
+scripts/deploy_modal.sh
+```
+
+Script làm lần lượt: kiểm tra `modal` đã đăng nhập và có `python-dotenv` → `modal secret create dattts --force --from-dotenv ~/dattts-secret.env` (ghi đè **toàn bộ** secret) → (`--first-run`) `modal run backend/modal_app.py::download_models` → `modal deploy backend/modal_app.py` → in URL web dạng `https://<workspace>--dattts-web.modal.run` → kiểm tra `/api/health`, `/api/voices` (25 giọng), `/api/billing/plans`, và xác nhận gọi thẳng không có mật khẩu bị 403. Tuỳ chọn khác: `scripts/deploy_modal.sh --help` (`--env-file`, `--skip-secret`, `--url`, `--dry-run`…).
+
+**Ghi lại URL web** mà script in ra — bước 3 cần nó (cuối script có in sẵn lệnh bước 3; lần `--first-run` lệnh đó đã kèm `--create-project`). Secret chỉ có hiệu lực ở container mới, nên sau khi đổi secret luôn phải deploy lại (script đã làm).
+
+Làm tay không dùng script:
+
+```bash
+modal secret create dattts --force --from-dotenv ~/dattts-secret.env
+modal run backend/modal_app.py::download_models   # chỉ lần đầu
 modal deploy backend/modal_app.py
-#    Modal in ra URL dạng https://<workspace>--dattts-web.modal.run
+curl https://<workspace>--dattts-web.modal.run/api/health   # {"ok":true,"engine":"vieneu-v3-turbo","voices":25,...}
 ```
 
-Kiểm tra sau khi deploy:
+### Bước 3. Deploy trang + proxy lên Cloudflare Pages
 
 ```bash
-curl https://<workspace>--dattts-web.modal.run/api/health
-# {"ok":true,"engine":"vieneu-v3-turbo","voices":25,...}
+npx wrangler@4.151.3 login                        # mở trình duyệt để đăng nhập Cloudflare (một lần)
+scripts/deploy_pages.sh --create-project --set-secrets \
+    --modal-origin https://<workspace>--dattts-web.modal.run \
+    --env-file ~/dattts-secret.env                # lần đầu
+scripts/deploy_pages.sh                           # các lần sau (đổi web/ hoặc functions/)
 ```
 
-Các tuỳ chọn được đọc trên máy bạn lúc chạy `modal deploy`:
+- `--create-project` tạo project Pages tên `dattts` (production branch `main`) nếu chưa có; thiếu cờ này mà project chưa tồn tại thì script cũng tự tạo.
+- Lần đầu (project vừa tạo) script kiểm tra sau deploy tại `https://dattts.pages.dev`, vì `dattts.com` chỉ được gắn ở bước 4; các lần sau kiểm tra `https://dattts.com`. Đổi bằng `--site-url URL`.
+- `--set-secrets` đặt hai biến **bí mật (đã mã hoá)** của Pages bằng `wrangler pages secret put`: `MODAL_ORIGIN` = URL web Modal ở bước 2, và `PROXY_SHARED_SECRET` lấy từ file secret (giá trị truyền qua stdin, không in ra màn hình).
+- Sau đó script chạy `npx wrangler@4.151.3 pages deploy web --project-name dattts` **từ gốc repo**, để wrangler gửi kèm thư mục `functions/` (proxy `/api/*`). Phiên bản wrangler được cố định trong script.
+
+Muốn đặt biến bằng giao diện: Cloudflare → **Workers & Pages** → `dattts` → **Settings → Variables and Secrets** → **Add** → chọn loại **Secret** (Encrypt) cho cả `MODAL_ORIGIN` và `PROXY_SHARED_SECRET` (môi trường Production). Biến mới chỉ áp dụng cho lần deploy **sau**, nên chạy lại `scripts/deploy_pages.sh`.
+
+Lưu ý: sau khi đổi `PROXY_SHARED_SECRET`, phải đổi **ở cả hai nơi** (file secret → `scripts/deploy_modal.sh`, rồi `scripts/deploy_pages.sh --set-secrets ...`). Lệch nhau thì mọi `/api/*` bị 403.
+
+### Bước 4. Trỏ tên miền dattts.com
+
+Cách khuyên dùng — **nameserver của dattts.com nằm trên Cloudflare**:
+
+1. Cloudflare → **Add a domain** → nhập `dattts.com` → chọn gói Free. Cloudflare đưa ra hai nameserver (dạng `xxx.ns.cloudflare.com`).
+2. Vào nơi bạn mua tên miền (ví dụ Mắt Bão, PA Việt Nam, Namecheap…), đổi nameserver của `dattts.com` sang hai nameserver đó. Có thể mất vài giờ (tối đa 24–48 giờ) để có hiệu lực.
+3. Cloudflare → **Workers & Pages** → `dattts` → **Custom domains** → **Set up a custom domain** → thêm `dattts.com`, rồi thêm tiếp `www.dattts.com`. Vì DNS đã ở Cloudflare, bản ghi được tạo tự động và chứng chỉ HTTPS được cấp trong vài phút.
+
+Nếu **không** muốn chuyển nameserver: vẫn thêm `dattts.com` trong **Custom domains** của Pages; Cloudflare sẽ hướng dẫn tạo bản ghi `CNAME` trỏ về `dattts.pages.dev` tại nhà cung cấp DNS hiện tại. Lưu ý: tên miền gốc (`dattts.com`, không có `www`) chỉ dùng được CNAME khi nhà cung cấp DNS hỗ trợ "CNAME flattening"/ALIAS — nếu không, hãy chuyển nameserver sang Cloudflare như trên.
+
+`ALLOWED_ORIGINS` mặc định đã có `https://dattts.com` và `https://www.dattts.com`; `PUBLIC_BASE_URL=https://dattts.com` đã có trong file mẫu.
+
+### Bước 5. Kiểm tra sau khi lên mạng
 
 ```bash
-DATTTS_GPU=T4 modal deploy backend/modal_app.py                               # worker chạy GPU
-DATTTS_DOMAINS=dattts.com,www.dattts.com modal deploy backend/modal_app.py    # gắn tên miền riêng
+curl https://dattts.com/api/health                       # {"ok":true,...}
+curl -s https://dattts.com/api/voices | head -c 200      # danh sách giọng (đi qua proxy)
+curl -s -o /dev/null -w '%{http_code}\n' https://<workspace>--dattts-web.modal.run/api/voices   # 403 = đã chặn gọi thẳng
+curl -s -H "Authorization: Bearer $ADMIN_TOKEN" "https://dattts.com/api/admin/waitlist?format=csv"
 ```
 
-Xem log bằng `modal app logs dattts`. Xem danh sách chờ:
+Mở `https://dattts.com`, đọc thử một đoạn, tua audio. Xem log backend: `modal app logs dattts`. Log của proxy: Cloudflare → `dattts` → **Deployments** → chọn bản deploy → **Functions** → *Real-time logs*.
 
-```bash
-curl -H "Authorization: Bearer $ADMIN_TOKEN" "https://<url>/api/admin/waitlist?format=csv"
-```
+### Bước 6. Webhook Polar
 
-### Chi phí: CPU hay GPU?
+URL webhook **giữ nguyên** `https://dattts.com/api/billing/webhook` (định dạng Raw) — webhook đi qua Pages như mọi `/api/*`, proxy chuyển nguyên body thô nên chữ ký vẫn đúng. **Không** dùng URL `modal.run` cho webhook: với `REQUIRE_PROXY=1` nó luôn bị 403. Sau mỗi lần deploy, xem Polar → **Settings → Webhooks → Deliveries**: mọi lần gửi phải là 202.
 
-Modal tính tiền theo giây cho CPU, RAM và GPU trong lúc container chạy. Hãy xem giá hiện tại tại [modal.com/pricing](https://modal.com/pricing); các gói thường có một khoản credit miễn phí mỗi tháng.
+### Chi phí ước tính
+
+| Khoản | Chi phí |
+|---|---|
+| Modal Starter | $0/tháng + tiền máy chạy theo giây; Modal tặng **$30 credit mỗi tháng** |
+| CPU | ~$0.047 / core-giờ |
+| RAM | ~$0.008 / GiB-giờ |
+| `TTSWorker` 4 CPU + 6 GiB | 4 × 0.047 + 6 × 0.008 ≈ **$0.24 / giờ khi đang chạy**, tự tắt sau 5 phút rảnh |
+| `web` 1 CPU + 2 GiB | ≈ $0.06 / giờ khi đang chạy, tự tắt sau 10 phút rảnh |
+| Cloudflare Pages + Functions | $0 (gói Free: 100.000 request Functions/ngày, dùng chung với Workers, reset 00:00 UTC). Trang tĩnh không tính; **mọi** `/api/*` đều tính, kể cả mỗi lần trang hỏi tiến độ job (1 s cho 10 lần đầu, sau đó giãn dần tới 10 s — job 100.000 ký tự ≈ 240 lần hỏi). Hết hạn mức thì `/api/*` lỗi tới 00:00 UTC; lưu lượng lớn thì lên Workers Paid ($5/tháng, 10 triệu request) |
+
+Ví dụ: worker chạy tổng cộng 3 giờ/ngày ≈ $0.72/ngày ≈ $22/tháng — vẫn nằm trong $30 credit. Khi không có ai dùng thì không tốn tiền. Giá có thể đổi; xem [modal.com/pricing](https://modal.com/pricing).
+
+### CPU hay GPU?
 
 - **CPU (mặc định, khuyên dùng khi mới bắt đầu):** bản int8 trên 4 CPU đọc nhanh hơn thời gian thực khoảng 2 lần. Chỉ trả tiền khi đang có người dùng, và chi phí cho mỗi phút âm thanh thấp.
-- **GPU (`DATTTS_GPU=T4`, `L4`, …):** nhanh hơn với văn bản dài và khi nhiều người dùng cùng lúc, nhưng giá mỗi giây cao hơn nhiều. Đáng bật khi lưu lượng đã đều. Lưu ý: nhánh GPU (PyTorch, `vieneu[cuda]`) chưa được chạy thử thực tế, nên hãy kiểm tra bằng `download_models` trước.
+- **GPU (`DATTTS_GPU=T4 scripts/deploy_modal.sh`, hoặc `L4`, …):** nhanh hơn với văn bản dài và khi nhiều người dùng cùng lúc, nhưng giá mỗi giây cao hơn nhiều. Đáng bật khi lưu lượng đã đều. Lưu ý: nhánh GPU (PyTorch, `vieneu[cuda]`) chưa được chạy thử thực tế, nên hãy chạy `--first-run` (đọc thử) trước.
 - **`scaledown_window`:** worker giữ ấm 300 giây và web giữ 600 giây sau request cuối. Tăng giá trị này thì ít khởi động nguội hơn nhưng tốn tiền chờ.
-- **`min_containers`:** mặc định là 0, nên khi không có ai dùng thì không tốn tiền, nhưng request đầu tiên phải chờ container khởi động và nạp mô hình (khoảng 10–30 giây). Nếu muốn luôn sẵn sàng, thêm `min_containers=1` vào `@app.cls(...)` của `TTSWorker` trong `modal_app.py`. Khi đó bạn trả tiền cho 4 CPU chạy suốt 24/7, nên hãy cân nhắc chỉ đặt cho `web` (rẻ, 1 CPU).
-- **Cache:** cùng văn bản, giọng, tốc độ, định dạng và từ điển thì trả file cũ ngay, không tốn công dựng lại và không trừ quota.
+- **`min_containers`:** mặc định là 0, nên khi không có ai dùng thì không tốn tiền, nhưng request đầu tiên phải chờ container khởi động và nạp mô hình (khoảng 10–30 giây; proxy không đặt giới hạn thời gian chờ riêng). Nếu muốn luôn sẵn sàng, thêm `min_containers=1` vào `@app.cls(...)` của `TTSWorker` trong `modal_app.py` — khi đó trả tiền 4 CPU chạy 24/7 (~$175/tháng), nên hãy cân nhắc chỉ đặt cho `web` (rẻ, 1 CPU).
+- **Giới hạn 150 giây của Modal:** mỗi request HTTP tới hàm web bị Modal cắt ở 150 giây (`timeout` của hàm không nâng được mức này); Modal trả `303` về chính URL đó để hỏi lại kết quả. Proxy Pages tự theo các `303` đó (tối đa 8 lần), nên `/api/tts` gần 3.000 ký tự khi nhiều người dùng cùng lúc hoặc container nguội vẫn trả kết quả bình thường. Đừng gọi thẳng URL modal.run cho `/api/tts` dài — client phải tự theo `303`.
+- **Cache:** cùng văn bản, giọng, tốc độ, định dạng và từ điển thì trả file cũ ngay, không tốn công dựng lại và không trừ quota. File `/api/files/*` có `Cache-Control: immutable` nên Cloudflare có thể cache ở edge; các `/api/*` khác không bị proxy cache.
+
+### Xử lý sự cố
+
+| Triệu chứng | Nguyên nhân thường gặp | Cách sửa |
+|---|---|---|
+| `502` `upstream_unavailable` ("Máy chủ DatTTS tạm thời không phản hồi") | Pages không gọi được Modal: chưa đặt / đặt sai `MODAL_ORIGIN` hoặc `PROXY_SHARED_SECRET` trên Pages, app Modal chưa deploy hoặc bị dừng | `curl https://<workspace>--dattts-web.modal.run/api/health`. Nếu Modal OK: kiểm tra biến Pages (bước 3) rồi chạy lại `scripts/deploy_pages.sh`. Nếu Modal lỗi: `modal app logs dattts`, chạy lại `scripts/deploy_modal.sh` |
+| `403` `direct_access_forbidden` trên `https://dattts.com/api/...` | `PROXY_SHARED_SECRET` ở Pages **khác** trong Modal secret | Đặt lại cùng một giá trị ở cả hai nơi: `scripts/deploy_modal.sh` rồi `scripts/deploy_pages.sh --set-secrets --modal-origin <URL> --env-file ~/dattts-secret.env` |
+| `403` `direct_access_forbidden` khi gọi URL `modal.run` | Đúng thiết kế (`REQUIRE_PROXY=1`) | Dùng `https://dattts.com`. Riêng `/api/health` luôn mở để kiểm tra |
+| Webhook Polar bị **tắt** (endpoint disabled) | Polar tự tắt endpoint sau ~10 lần gửi lỗi liên tiếp (ví dụ lúc Modal/Pages lỗi, hoặc webhook trỏ vào URL modal.run bị 403) | Sửa nguyên nhân, kiểm tra URL là `https://dattts.com/api/billing/webhook`, rồi vào Polar → **Settings → Webhooks** → mở endpoint → **Enable** lại; ở tab **Deliveries** bấm gửi lại (redeliver) các sự kiện thất bại |
+| Webhook trả `503` | Thiếu `POLAR_WEBHOOK_SECRET` trong Modal secret | Thêm vào `~/dattts-secret.env`, chạy `scripts/deploy_modal.sh` |
+| Webhook trả `403 bad_signature` | `POLAR_WEBHOOK_SECRET` sai (lấy nhầm sandbox/production) | Copy lại Secret của đúng endpoint trong Polar, deploy lại |
+| Mọi khách chung một quota miễn phí | Request không qua Pages, hoặc secret lệch (backend không tin `X-DatTTS-Client-IP`) | Kiểm tra như dòng 403 ở trên; đảm bảo `REQUIRE_PROXY=1` |
+| Request đầu tiên chậm 10–30 giây | Container lạnh | Bình thường; xem `min_containers` ở trên |
+
+### Cách thay thế: tên miền riêng của Modal (gói Team)
+
+Nếu bạn dùng gói **Modal Team** (có custom domain), có thể bỏ Cloudflare Pages: Modal phục vụ cả trang lẫn API ở `dattts.com`. Thêm tên miền trong trang cài đặt workspace của Modal, tạo bản ghi DNS mà Modal yêu cầu (nếu DNS ở Cloudflare thì tắt proxy — đám mây xám — để Modal cấp chứng chỉ), rồi deploy với `DATTTS_DOMAINS=dattts.com,www.dattts.com scripts/deploy_modal.sh`. Khi đó bỏ `REQUIRE_PROXY` (hoặc đặt `0`) trong file secret, vì không còn proxy nào gửi mật khẩu chung; quota theo IP dùng `TRUST_PROXY=1`. Xem mục *Custom domains* trong tài liệu web endpoint của Modal tại [modal.com/docs](https://modal.com/docs).
 
 ## Thanh toán với Polar
 
@@ -262,8 +381,8 @@ Trên **production** (<https://polar.sh>, tổ chức "Dat TTS", id `cd16dd37-dd
 
 1. **Xoay access token.** Token hiện tại đã bị dán vào khung chat, coi như lộ. Vào **Settings → Developers**, xoá token cũ, tạo token mới **thời hạn dài** (ví dụ 1 năm, ghi lịch xoay trước khi hết hạn) với đúng các scope ở Bước 5. Nếu nghi webhook secret cũng lộ, tạo lại secret của webhook (Settings → Webhooks → endpoint → Regenerate secret).
 2. **Điền tên pháp lý** thay cho `[Legal name]` trong `web/terms.html`, `web/privacy.html` và `[Tên pháp lý]` trong `web/dieu-khoan.html`, `web/bao-mat.html` (kiểm bằng `E2E_RELEASE=1 node scripts/e2e_billing.mjs`).
-3. **Tạo Modal secret và deploy** (Bước 7 bên dưới, rồi `modal run backend/modal_app.py::download_models` lần đầu và `modal deploy backend/modal_app.py`).
-4. **Trỏ dattts.com** về Modal hoặc Cloudflare Pages (mục [Trỏ tên miền dattts.com](#trỏ-tên-miền-dattts-com)). Webhook production đã trỏ sẵn tới `https://dattts.com/api/billing/webhook`, nên trước khi tên miền chạy, các lần gửi webhook sẽ lỗi; sau khi trỏ xong hãy xem tab **Deliveries** và bật lại webhook nếu Polar đã tự tắt.
+3. **Tạo Modal secret và deploy:** điền `~/dattts-secret.env` (Bước 7 bên dưới) rồi chạy `scripts/deploy_modal.sh --first-run` (mục [Triển khai lên Modal + Cloudflare](#triển-khai-lên-modal--cloudflare), bước 1–2).
+4. **Trỏ dattts.com** về Cloudflare Pages (bước 3–4 của mục [Triển khai lên Modal + Cloudflare](#triển-khai-lên-modal--cloudflare)). Webhook production đã trỏ sẵn tới `https://dattts.com/api/billing/webhook`, nên trước khi tên miền chạy, các lần gửi webhook sẽ lỗi; sau khi trỏ xong hãy xem tab **Deliveries** và bật lại webhook nếu Polar đã tự tắt.
 5. **Gửi Polar duyệt tổ chức** (Settings → General, kèm tài khoản nhận tiền Stripe ở Bước 2). Khi được duyệt, dòng "test mode" biến mất và thẻ thật mới thanh toán được.
 6. **Mua thử thật bằng mã giảm giá 100%:** trong dashboard Polar vào **Products → Discounts → New discount**, tạo mã (ví dụ `DATTEST100`) giảm 100%, giới hạn 1–2 lần dùng, áp cho gói Pro tháng. Mở `https://dattts.com/#pricing` → Monthly → **Get Pro**, nhập mã ở "Add discount code", dùng email thật. Kiểm tra: trang `checkout-success.html` báo thành công, email biên nhận của Polar có nút "Access purchase" mở cổng khách hàng, trong đó có key `DATTTS-…` (ghi lại xem email thật có những gì để chắc chữ trên trang khớp), dán key vào phòng thu thấy **Pro Monthly** và **0 / 1,000,000**, tạo thử một đoạn, tab **Deliveries** của webhook toàn mã 202. Sau đó thu hồi subscription thử trong dashboard và xoá mã giảm giá.
 
@@ -334,7 +453,7 @@ Copy token (dạng `polar_oat_...`) và cất ngay, vì Polar chỉ hiện token
 
 Vào **Settings → Webhooks → Add endpoint**:
 
-- **URL:** `https://dattts.com/api/billing/webhook`. Nếu chưa trỏ tên miền thì dùng `https://<workspace>--dattts-web.modal.run/api/billing/webhook`.
+- **URL:** `https://dattts.com/api/billing/webhook` (đi qua Cloudflare Pages). **Không** dùng URL `modal.run`: với `REQUIRE_PROXY=1` nó bị 403 và Polar sẽ tự tắt webhook.
 - **Format:** `Raw` (webhook production hiện dùng API version **2027-01**)
 - **Events**, chọn các sự kiện sau:
   - `subscription.created`, `subscription.active`, `subscription.updated`, `subscription.canceled`, `subscription.uncanceled`, `subscription.revoked`
@@ -353,12 +472,17 @@ Polar gửi lại tối đa 10 lần. Nếu endpoint lỗi 10 lần liên tiếp
 
 ### Bước 7. Đưa cấu hình vào Modal secret
 
-`modal secret create --force` ghi đè **toàn bộ** secret, nên phải điền lại cả `ADMIN_TOKEN` và `API_KEYS` cũ. Lệnh đầy đủ cho **production** (các UUID là ID thật, công khai; chỉ thay `<...>` bằng bí mật của bạn):
+**Cách khuyên dùng:** điền các biến dưới đây vào `~/dattts-secret.env` (mẫu: `deploy/secret.env.example`) rồi chạy `scripts/deploy_modal.sh` — xem [Triển khai lên Modal + Cloudflare](#triển-khai-lên-modal--cloudflare).
+
+`modal secret create --force` ghi đè **toàn bộ** secret, nên phải điền lại cả `ADMIN_TOKEN`, `API_KEYS` và `PROXY_SHARED_SECRET` cũ. Lệnh đầy đủ cho **production** (các UUID là ID thật, công khai; chỉ thay `<...>` bằng bí mật của bạn):
 
 ```bash
 modal secret create dattts --force \
   ADMIN_TOKEN=<mã-quản-trị, ví dụ: openssl rand -hex 24> \
   API_KEYS=<key-nội-bộ, cách nhau bằng dấu phẩy, có thể để trống> \
+  PROXY_SHARED_SECRET=<giống hệt biến cùng tên ở Cloudflare Pages, openssl rand -hex 32> \
+  REQUIRE_PROXY=1 \
+  TRUST_PROXY=1 \
   PUBLIC_BASE_URL=https://dattts.com \
   POLAR_SERVER=production \
   POLAR_ACCESS_TOKEN=<polar_oat_... token MỚI sau khi xoay> \
@@ -378,7 +502,7 @@ modal secret create dattts --force \
 Mẹo để token không nằm trong lịch sử shell: ghi các dòng `KEY=VALUE` vào một file ngoài repo (ví dụ `~/dattts-secret.env`, `chmod 600`) rồi chạy `modal secret create dattts --force --from-dotenv ~/dattts-secret.env`. Với **sandbox**, đổi `POLAR_SERVER=sandbox` và thay mọi UUID bằng ID sandbox của bạn.
 
 ```bash
-modal deploy backend/modal_app.py      # secret chỉ có hiệu lực ở container mới, nên phải deploy lại
+modal deploy backend/modal_app.py      # secret chỉ có hiệu lực ở container mới, nên phải deploy lại (script tự làm)
 ```
 
 Kiểm tra lại cấu hình:
@@ -447,28 +571,6 @@ Các endpoint khác của bản giả:
 - `/_fake/revoke`: thu hồi key mà không gửi webhook.
 
 Xem đầy đủ trong docstring của file.
-
-## Trỏ tên miền dattts.com
-
-### Cách A: tên miền riêng của Modal (đơn giản nhất, một nguồn duy nhất)
-
-Modal cho phép gắn tên miền riêng vào web endpoint qua tham số `custom_domains` của `@modal.asgi_app`. `modal_app.py` đã đọc tham số này từ `DATTTS_DOMAINS`. **Tính năng này cần gói Modal có hỗ trợ custom domain.** Hãy xem gói nào có và cách cấu hình DNS hiện tại trong tài liệu của Modal (mục *Custom domains* trong hướng dẫn về web endpoint, tại [modal.com/docs](https://modal.com/docs)).
-
-1. Thêm tên miền `dattts.com` trong trang cài đặt workspace của Modal, rồi tạo bản ghi DNS (CNAME/A) mà Modal yêu cầu tại nhà đăng ký tên miền hoặc Cloudflare. Nếu dùng Cloudflare, tắt proxy (đám mây xám) để Modal cấp được chứng chỉ.
-2. Chạy `DATTTS_DOMAINS=dattts.com,www.dattts.com modal deploy backend/modal_app.py`.
-3. Giữ `web/config.js` như mặc định (`DATTTS_API = ""`), vì trang và API cùng nguồn.
-
-### Cách B: Cloudflare Pages cho `web/`, API trên Modal
-
-Dùng cách này khi gói Modal của bạn chưa có custom domain, hoặc bạn muốn trang tĩnh nằm trên CDN.
-
-1. Sửa `web/config.js`:
-   ```js
-   window.DATTTS_API = window.DATTTS_API ?? "https://<workspace>--dattts-web.modal.run";
-   ```
-2. Cloudflare Dashboard → Workers & Pages → Create → Pages, rồi kết nối repo hoặc tải lên thư mục `web/`. Không cần lệnh build, và thư mục xuất ra là `web`. Có thể dùng CLI thay cho dashboard: `npx wrangler pages deploy web --project-name dattts`.
-3. Trong Pages → Custom domains, thêm `dattts.com` và `www.dattts.com`. Nếu tên miền đã nằm trên Cloudflare thì DNS được tạo tự động.
-4. Đảm bảo `ALLOWED_ORIGINS` trong secret `dattts` có `https://dattts.com,https://www.dattts.com` (đây là giá trị mặc định). API đã bật CORS cho mọi endpoint, kể cả tua audio bằng `Range`, và việc này đã được kiểm thử khi trang và API ở hai nguồn khác nhau.
 
 ## Việc còn phải làm (TODO)
 

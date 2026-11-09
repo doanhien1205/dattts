@@ -58,21 +58,50 @@ cd backend && PUBLIC_BASE_URL=http://127.0.0.1:8765 python server_local.py --fak
 
 ```bash
 cd backend && pytest -q                                   # unit + integration (real-engine tests need DATTTS_MODEL_DIR)
+node scripts/test_proxy.mjs                               # Cloudflare Pages proxy function against a local echo server
 node scripts/e2e.mjs                                      # Playwright, against server_local.py on :8765
 PYTHON=$PWD/.venv/bin/python node scripts/e2e_billing.mjs # Playwright billing flows with fake Polar (starts its own servers)
 ```
 
 ## Deploy
 
-The backend runs on [Modal](https://modal.com) (`backend/modal_app.py`: a CPU `TTSWorker`, an ASGI web endpoint, a files Volume and a KV Dict). Create the `dattts` secret, download the model once, then deploy:
+Production runs on **Modal Starter** (no custom domains on that plan) behind **Cloudflare Pages**:
 
-```bash
-modal secret create dattts --force --from-dotenv ~/dattts-secret.env   # keys as in backend/.env.example
-modal run backend/modal_app.py::download_models
-modal deploy backend/modal_app.py
+```
+Browser / Polar webhook ──► https://dattts.com (Cloudflare Pages)
+   ├─ static files: web/
+   └─ /api/*  ──► Pages Function functions/api/[[path]].js ──► https://<workspace>--dattts-web.modal.run/api/*
 ```
 
-See [README.md](README.md) for the full checklist (Polar, custom domain, legal pages).
+The Pages Function streams method, path, query, raw body (Polar webhook signatures stay valid), Range/206 and all
+response headers through unchanged. It strips hop-by-hop headers and any client-sent `X-DatTTS-*`, then adds
+`X-DatTTS-Proxy-Secret` and `X-DatTTS-Client-IP` (from `CF-Connecting-IP`). The backend trusts that IP only when the
+secret matches (`PROXY_SHARED_SECRET`, constant-time compare); with `REQUIRE_PROXY=1` every direct `/api/*` call to
+the modal.run URL gets `403 direct_access_forbidden` (except `/api/health`). If Modal is unreachable the proxy
+returns `502 upstream_unavailable` (EN/VI by `Accept-Language`).
+
+```bash
+cp deploy/secret.env.example ~/dattts-secret.env && chmod 600 ~/dattts-secret.env   # fill in <...>; keep it outside the repo
+pip install modal python-dotenv && modal token new   # python-dotenv is needed by `modal secret create --from-dotenv`
+scripts/deploy_modal.sh --first-run          # secret → download model → modal deploy → smoke tests; prints the modal.run URL
+npx wrangler@4.151.3 login
+scripts/deploy_pages.sh --create-project --set-secrets \
+    --modal-origin https://<workspace>--dattts-web.modal.run --env-file ~/dattts-secret.env
+```
+
+On the first run the Pages smoke test targets `https://dattts.pages.dev` (the custom domain is attached afterwards).
+Modal cuts each web request at 150 s and answers `303` to the same URL; the Pages Function follows those 303s itself
+(up to 8), so long `/api/tts` calls still work through the proxy. Every `/api/*` request, including job-progress polls
+(1 s for the first 10, then backing off to 10 s), counts toward the Workers Free quota of 100,000 requests/day.
+
+Then add `dattts.com` and `www.dattts.com` under Pages → Custom domains (easiest with the domain's nameservers on
+Cloudflare). Pages needs two encrypted variables, `MODAL_ORIGIN` and `PROXY_SHARED_SECRET`; the latter must equal the
+one in the Modal `dattts` secret. The Polar webhook URL stays `https://dattts.com/api/billing/webhook`.
+Cost: Modal Starter is $0 + usage with $30/month credit; the 4 CPU + 6 GiB worker costs ≈ $0.24/hour while running
+and scales to zero after 5 idle minutes; Pages is free. Alternative: on Modal Team, use
+`DATTTS_DOMAINS=dattts.com,www.dattts.com scripts/deploy_modal.sh` and skip Pages (set `REQUIRE_PROXY=0`).
+
+See [README.md](README.md) (Vietnamese) for the full step-by-step guide, troubleshooting, Polar and legal pages.
 
 ## License & credits
 

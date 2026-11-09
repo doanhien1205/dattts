@@ -33,3 +33,11 @@ playwright-report/
 !.env.example
 .DS_Store
 .modal.toml
+
+# Cloudflare wrangler (thư mục tạm của `wrangler pages dev`)
+.wrangler/
+# Secret deploy: chỉ giữ file mẫu trong repo
+deploy/*.env
+!deploy/*.env.example
+.dev.vars
+.dev.vars.*

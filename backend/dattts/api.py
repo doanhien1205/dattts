@@ -9,6 +9,7 @@ from __future__ import annotations
 import csv
 import hmac
 import io
+import ipaddress
 import json
 import logging
 import re
@@ -107,6 +108,11 @@ class CheckoutBody(BaseModel):
 
 
 WEBHOOK_PATH = "/api/billing/webhook"
+
+# Proxy Cloudflare Pages (SPEC Phần 4): header do Pages Function đặt (đã xoá bản khách tự gửi).
+PROXY_SECRET_HEADER = "x-dattts-proxy-secret"
+PROXY_CLIENT_IP_HEADER = "x-dattts-client-ip"
+PROXY_EXEMPT_PATHS = frozenset({"/api/health"})
 WEBHOOK_MAX_BYTES = 2 * 1024 * 1024
 CHECKOUT_RATE_PER_HOUR = 10
 # Số lần mỗi IP được hỏi Polar xác thực key (cache trượt) mỗi phút — chặn dò key ngẫu nhiên làm cạn
@@ -317,6 +323,33 @@ def create_app(renderer, store, settings: Settings | None = None, *, polar: Pola
     max_body = int(settings.job_max_chars) * 6 + 512 * 1024
     app.add_middleware(_BodyLimit, max_bytes=max_body, path_limits={WEBHOOK_PATH: WEBHOOK_MAX_BYTES})
 
+    def via_proxy(request: Request) -> bool:
+        """Request đi qua Pages Function: có ``X-DatTTS-Proxy-Secret`` khớp PROXY_SHARED_SECRET (hằng thời gian)."""
+        cached = getattr(request.state, "via_proxy", None)
+        if cached is not None:
+            return cached
+        expected = settings.proxy_shared_secret
+        got = request.headers.get(PROXY_SECRET_HEADER)
+        ok = bool(expected and got is not None
+                  and hmac.compare_digest(got.encode("utf-8"), expected.encode("utf-8")))
+        request.state.via_proxy = ok
+        return ok
+
+    if settings.require_proxy and not settings.proxy_shared_secret:
+        log.warning("REQUIRE_PROXY=1 nhưng chưa đặt PROXY_SHARED_SECRET → bỏ qua (không chặn truy cập trực tiếp)")
+    elif settings.proxy_shared_secret and len(settings.proxy_shared_secret) < 32:
+        log.warning("PROXY_SHARED_SECRET ngắn hơn 32 ký tự — nên dùng: openssl rand -hex 32")
+
+    @app.middleware("http")
+    async def _require_proxy(request: Request, call_next):
+        # Đăng ký TRƯỚC _security_headers (nằm trong nó) và SAU _BodyLimit/CORS (nằm ngoài chúng):
+        # chặn trước khi đọc body hay trả header CORS.
+        path = request.url.path
+        if (settings.proxy_guard_enabled and (path == "/api" or path.startswith("/api/"))
+                and path not in PROXY_EXEMPT_PATHS and not via_proxy(request)):
+            return _err_l(request, "direct_access_forbidden", 403)
+        return await call_next(request)
+
     @app.middleware("http")
     async def _security_headers(request: Request, call_next):
         resp = await call_next(request)
@@ -360,7 +393,14 @@ def create_app(renderer, store, settings: Settings | None = None, *, polar: Pola
 
     # ---------- khách & quota ----------
     def client_ip(request: Request) -> str:
-        # Proxy thêm IP khách vào CUỐI X-Forwarded-For; phần đầu do khách tự gửi nên không tin được.
+        # 1) Qua Pages Function (secret đúng): IP khách = X-DatTTS-Client-IP (CF-Connecting-IP), nếu là IP hợp lệ.
+        if via_proxy(request):
+            raw = (request.headers.get(PROXY_CLIENT_IP_HEADER) or "").strip()
+            try:
+                return str(ipaddress.ip_address(raw))
+            except ValueError:
+                pass  # IP hỏng → dùng logic cũ bên dưới
+        # 2) Proxy thêm IP khách vào CUỐI X-Forwarded-For; phần đầu do khách tự gửi nên không tin được.
         # Lấy phần tử thứ ``trust_proxy_hops`` tính từ phải.
         if settings.trust_proxy:
             xff = ",".join(request.headers.getlist("x-forwarded-for"))
@@ -369,6 +409,21 @@ def create_app(renderer, store, settings: Settings | None = None, *, polar: Pola
                 n = max(1, int(settings.trust_proxy_hops or 1))
                 return hops[-n] if len(hops) >= n else hops[0]
         return request.client.host if request.client else "unknown"
+
+    def limit_ip(request: Request) -> str:
+        """Khoá cho quota miễn phí & rate limit: IPv6 gộp theo /64 (một khách thường giữ cả /64 nên
+        đổi địa chỉ trong đó không được quota mới); IPv4-mapped (::ffff:a.b.c.d) → IPv4.
+        Waitlist/log vẫn ghi IP đầy đủ qua ``client_ip``."""
+        ip = client_ip(request)
+        try:
+            addr = ipaddress.ip_address(ip)
+        except ValueError:
+            return ip
+        if addr.version == 6:
+            if addr.ipv4_mapped is not None:
+                return str(addr.ipv4_mapped)
+            return str(ipaddress.ip_network(f"{addr}/64", strict=False))
+        return str(addr)
 
     def who(request: Request) -> dict | None:
         """Khách theo ``X-API-Key``: None (không gửi), ``{"kind":"internal"}`` hoặc ``{"kind":"polar",…}``.
@@ -380,7 +435,7 @@ def create_app(renderer, store, settings: Settings | None = None, *, polar: Pola
         k = (request.headers.get("x-api-key") or "").strip()
 
         def limit_validations() -> None:
-            rk = f"rl:lk:{today_vn():%Y-%m-%dT%H:%M}:{client_ip(request)}"
+            rk = f"rl:lk:{today_vn():%Y-%m-%dT%H:%M}:{limit_ip(request)}"
             if store.kv_incr(rk, 1) > KEY_VALIDATE_RATE_PER_MIN:
                 raise BillingError("rate_limited", status=429, key="rate_limited.keys")
 
@@ -403,7 +458,7 @@ def create_app(renderer, store, settings: Settings | None = None, *, polar: Pola
         return nxt.isoformat()
 
     def quota_key(request: Request) -> str:
-        return f"quota:{today_vn():%Y-%m-%d}:ip:{client_ip(request)}"
+        return f"quota:{today_vn():%Y-%m-%d}:ip:{limit_ip(request)}"
 
     def internal_usage_key() -> str:
         return f"usage:{today_vn():%Y-%m-%d}:apikey"
@@ -697,7 +752,7 @@ def create_app(renderer, store, settings: Settings | None = None, *, polar: Pola
         email = (body.email or "").strip().lower() or None
         if email is not None and not EMAIL_RE.fullmatch(email):
             raise ApiError("bad_email", status=400)
-        rk = f"rl:checkout:{today_vn():%Y-%m-%dT%H}:{client_ip(request)}"
+        rk = f"rl:checkout:{today_vn():%Y-%m-%dT%H}:{limit_ip(request)}"
         if store.kv_incr(rk, 1) > CHECKOUT_RATE_PER_HOUR:
             raise ApiError("rate_limited", status=429, key="rate_limited.checkout", headers={"Retry-After": "600"})
         return JSONResponse({"url": billing.create_checkout(plan, email)}, headers=no_store)

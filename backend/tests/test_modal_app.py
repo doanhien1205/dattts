@@ -106,3 +106,16 @@ def test_modal_renderer_keeps_bilingual_error_key(tmp_path):
     assert ei.value.key == "unknown_voice" and ei.value.params == {"name": "Ai Đó", "examples": "Trúc Ly"}
     assert ei.value.localized("vi").startswith("Không tìm thấy giọng “Ai Đó”")
     assert ei.value.localized("en").startswith("Voice “Ai Đó” not found")
+
+
+def test_web_reads_proxy_settings_from_secret():
+    """SPEC Phần 4: PROXY_SHARED_SECRET / REQUIRE_PROXY đến từ secret `dattts` gắn vào hàm web (Settings.from_env),
+    image KHÔNG đặt sẵn (để secret luôn quyết định)."""
+    import modal_app
+
+    for k in ("PROXY_SHARED_SECRET", "REQUIRE_PROXY", "POLAR_ACCESS_TOKEN", "PUBLIC_BASE_URL"):
+        assert k not in modal_app._ENV
+    spec = getattr(modal_app.web, "_spec_", None)
+    if spec is None or not hasattr(spec, "secrets"):
+        pytest.skip("modal không lộ _spec_.secrets ở phiên bản này")
+    assert any(s is modal_app.secret or repr(s) == repr(modal_app.secret) for s in spec.secrets)

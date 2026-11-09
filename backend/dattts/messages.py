@@ -288,6 +288,11 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "Invalid webhook signature.",
         "vi": "Chữ ký webhook không hợp lệ.",
     },
+    # ── deployment (SPEC Phần 4) ──
+    "direct_access_forbidden": {
+        "en": "Direct access to this server is not allowed. Please use https://dattts.com.",
+        "vi": "Không được gọi thẳng máy chủ này. Hãy dùng https://dattts.com.",
+    },
 }
 
 # Every error code the API can send (the part of a message key before the dot).

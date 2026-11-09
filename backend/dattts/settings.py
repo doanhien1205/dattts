@@ -66,6 +66,12 @@ class Settings:
     # Số proxy tin cậy đứng trước app (khi TRUST_PROXY=1): IP khách = phần tử thứ N tính TỪ PHẢI
     # của X-Forwarded-For (phần bên trái do khách tự gửi, không tin được).
     trust_proxy_hops: int = 1
+    # ── Proxy Cloudflare Pages phía trước Modal (SPEC Phần 4) ──
+    # Chuỗi bí mật dùng chung với Pages Function: request mang ``X-DatTTS-Proxy-Secret`` khớp → tin
+    # ``X-DatTTS-Client-IP``. ``require_proxy`` (REQUIRE_PROXY=1, chỉ có tác dụng khi đã đặt secret) → chặn
+    # mọi /api/* không qua proxy (403 direct_access_forbidden), trừ /api/health.
+    proxy_shared_secret: str | None = None
+    require_proxy: bool = False
     # ── Thanh toán qua Polar (SPEC Phần 2 + 3). Thiếu POLAR_ACCESS_TOKEN → billing tắt. ──
     polar_server: str = "sandbox"
     polar_api_base: str | None = None
@@ -136,6 +142,11 @@ class Settings:
         return "https://sandbox-api.polar.sh"
 
     @property
+    def proxy_guard_enabled(self) -> bool:
+        """REQUIRE_PROXY chỉ có hiệu lực khi đã đặt PROXY_SHARED_SECRET (không thì không ai qua được)."""
+        return bool(self.require_proxy and self.proxy_shared_secret)
+
+    @property
     def public_base(self) -> str:
         return (self.public_base_url or "https://dattts.com").rstrip("/")
 
@@ -157,6 +168,8 @@ class Settings:
             job_stale_seconds=_int(e.get("JOB_STALE_SECONDS"), 900),
             job_queue_stale_seconds=_int(e.get("JOB_QUEUE_STALE_SECONDS"), 4 * 3600),
             trust_proxy_hops=max(1, _int(e.get("TRUST_PROXY_HOPS"), 1)),
+            proxy_shared_secret=_opt(e.get("PROXY_SHARED_SECRET")),
+            require_proxy=_bool(e.get("REQUIRE_PROXY")),
             polar_server=(e.get("POLAR_SERVER") or "").strip().lower() or "sandbox",
             polar_api_base=_opt(e.get("POLAR_API_BASE")),
             polar_access_token=_opt(e.get("POLAR_ACCESS_TOKEN")),

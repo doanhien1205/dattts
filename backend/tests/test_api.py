@@ -228,7 +228,7 @@ def test_quota_endpoint_reset_at_vn_midnight(client):
 
 def test_quota_key_uses_vn_day(client):
     client.post("/api/tts", json={"text": "Chào."})
-    keys = [k for k in client.store._kv if k.startswith("quota:")]
+    keys = [k for k in client.store._kv if k.startswith("quota:") and ":ip:" in k]
     day = datetime.now(datetime.fromisoformat(client.get("/api/quota").json()["reset_at"]).tzinfo)
     assert keys == [f"quota:{day:%Y-%m-%d}:ip:testclient"]
 

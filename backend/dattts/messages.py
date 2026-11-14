@@ -247,6 +247,16 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "Too many requests. Please wait a moment and try again.",
         "vi": "Bạn gửi quá nhiều yêu cầu. Bạn đợi một lát rồi thử lại nhé.",
     },
+    "rate_limited.free": {
+        "en": "Too many requests in one minute. Wait a minute and try again — Pro keys have no per-minute limit.",
+        "vi": "Bạn tạo quá nhiều lượt trong một phút. Bạn đợi một phút rồi thử lại nhé — key Pro không bị giới hạn này.",
+    },
+    "quota_exceeded.free_capacity": {
+        "en": "The free tier is at capacity for today. It reopens at midnight Vietnam time (UTC+7) — or "
+              "upgrade to Pro to keep going now.",
+        "vi": "Hôm nay gói miễn phí đã hết lượt chung. Gói sẽ mở lại lúc 0 giờ (giờ Việt Nam) — hoặc nâng cấp "
+              "lên gói Pro để dùng tiếp ngay.",
+    },
     "rate_limited.keys": {
         "en": "Too many API keys tried in a short time. Wait a minute and try again.",
         "vi": "Bạn thử quá nhiều API key trong thời gian ngắn. Bạn đợi một phút rồi thử lại nhé.",

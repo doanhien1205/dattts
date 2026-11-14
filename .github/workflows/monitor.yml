@@ -1,0 +1,30 @@
+# Kiểm tra trang đang chạy 15 phút một lần. Khi một lần chạy lỗi, GitHub gửi email cho chủ repo
+# (Settings → Notifications → Actions). Bật bằng cách đặt biến repo MONITOR_URL=https://dattts.com
+# (Settings → Secrets and variables → Actions → Variables). Chưa đặt thì workflow tự bỏ qua.
+name: Uptime check
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+permissions: {}
+jobs:
+  check:
+    if: ${{ vars.MONITOR_URL != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BASE: ${{ vars.MONITOR_URL }}
+    steps:
+      - name: Home page
+        run: curl -fsS --retry 2 --max-time 30 -o /dev/null "$BASE/"
+      - name: API health
+        run: |
+          body=$(curl -fsS --retry 2 --retry-delay 10 --max-time 60 "$BASE/api/health")
+          echo "$body"
+          echo "$body" | grep -q '"ok":true'
+      - name: Voices list
+        run: |
+          n=$(curl -fsS --retry 2 --max-time 60 "$BASE/api/voices" | python3 -c "import sys,json;print(len(json.load(sys.stdin)['voices']))")
+          echo "voices: $n"; test "$n" -ge 20
+      - name: Pricing reachable
+        run: curl -fsS --retry 2 --max-time 60 "$BASE/api/billing/plans" | python3 -c "import sys,json;d=json.load(sys.stdin);print('billing enabled:',d['enabled'])"

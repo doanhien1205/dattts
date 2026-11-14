@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /checkout-success.html
+Disallow: /thanh-toan.html
+
+Sitemap: https://dattts.com/sitemap.xml

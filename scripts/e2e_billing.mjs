@@ -81,7 +81,7 @@ async function startPolar() {
 let dataDir = '';
 async function startDatTTS({ billing, fake }) {
   // Xoá mọi biến POLAR_* thừa hưởng từ shell để giai đoạn "tắt" thật sự tắt.
-  const env = { PUBLIC_BASE_URL: BASE, ADMIN_TOKEN: 'e2e-admin', POLAR_ACCESS_TOKEN: '', POLAR_API_BASE: '', POLAR_ORGANIZATION_ID: '' };
+  const env = { FREE_REQUESTS_PER_MIN: '0', PUBLIC_BASE_URL: BASE, ADMIN_TOKEN: 'e2e-admin', POLAR_ACCESS_TOKEN: '', POLAR_API_BASE: '', POLAR_ORGANIZATION_ID: '' };
   if (billing) Object.assign(env, polarEnv());
   dataDir = path.join(DATA, billing ? (fake ? 'on' : 'on-real') : 'off');
   const args = ['server_local.py', '--port', String(PORT), '--data-dir', dataDir];

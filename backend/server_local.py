@@ -40,6 +40,9 @@ def build_app(fake: bool, data_dir: str, model_dir: str | None = None, threads: 
         md = model_dir or os.environ.get("DATTTS_MODEL_DIR") or settings.model_dir
         device = "cuda" if settings.gpu else "cpu"
         engine = VieNeuEngine(md, device=device, lazy=True, threads=threads)
+    purged = store.blob_purge(settings.file_retention_days)  # local: dọn một lần lúc khởi động
+    if purged:
+        logging.getLogger("dattts").info("Đã xoá %d file cũ hơn %d ngày", purged, settings.file_retention_days)
     renderer = LocalRenderer(engine, store)
     if warm and not fake:
         t0 = time.time()

@@ -1,0 +1,26 @@
+DatTTS
+Copyright (c) 2026 the DatTTS authors.
+
+This product uses third-party components. Their notices are reproduced here as
+their licenses require.
+
+VieNeu-TTS v3 Turbo (speech model, preset voices, `vieneu` Python package)
+  Copyright (c) Phạm Nguyễn Ngọc Bảo (pnnbao-ump)
+  Licensed under the Apache License, Version 2.0
+  https://huggingface.co/pnnbao-ump/VieNeu-TTS-v3-Turbo
+  https://github.com/pnnbao97/VieNeu-TTS
+  The model is downloaded at deploy time and is not modified by DatTTS.
+
+MOSS Audio Tokenizer Nano (audio codec used by VieNeu-TTS)
+  OpenMOSS Team — https://huggingface.co/OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano-ONNX
+  See the model card for its license terms.
+
+Fonts served from Google Fonts: Be Vietnam Pro, Fraunces, JetBrains Mono
+  SIL Open Font License 1.1
+
+Python and JavaScript dependencies (FastAPI, Pydantic, Uvicorn, httpx, NumPy,
+ONNX Runtime, soundfile, huggingface_hub, Modal client, Wrangler) are used under
+their respective open-source licenses; see each package for details.
+
+A copy of the Apache License 2.0 is available at
+https://www.apache.org/licenses/LICENSE-2.0

@@ -1,0 +1,10 @@
+# Cloudflare Pages: header bảo mật cho trang tĩnh. /api/* đi qua Pages Function nên không dùng file này.
+# Các mã sha256 là hash của script inline (đặt giao diện sáng/tối, chuyển hướng thanh-toan.html).
+# Đổi nội dung script inline thì phải tính lại hash: python3 scripts/csp_hashes.py
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-EUqfOstzS8reRSvuG2vZUv8wfedEHLa6MkGWdc5OesU=' 'sha256-nvqkWvSBKnnLsowIG8bYQGzJLNMF7AygaAA8gBj46BE=' 'sha256-tRJx+xm8Nx5u9ZGCHVNoZ3yEqZUtS2tiaDszvlFiO7Y='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()

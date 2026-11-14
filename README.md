@@ -104,6 +104,9 @@ Biến môi trường (xem `backend/dattts/settings.py`):
 | Biến | Mặc định | Ý nghĩa |
 |---|---|---|
 | `FREE_DAILY_CHARS` | `20000` | Số ký tự miễn phí mỗi ngày cho mỗi IP (tính lại lúc nửa đêm giờ Việt Nam) |
+| `FREE_GLOBAL_DAILY_CHARS` | `1000000` | Trần **tổng** ký tự miễn phí mỗi ngày của cả hệ thống (chặn hoá đơn máy khi bị lạm dụng bằng nhiều IP; khoảng $1,3 tiền máy/ngày ở mức mặc định). `0` = không giới hạn. Không ảnh hưởng khách Pro. |
+| `FREE_REQUESTS_PER_MIN` | `12` | Số lượt tạo giọng mỗi phút cho mỗi IP không có key. `0` = tắt (đặt `0` khi chạy `scripts/e2e*.mjs`). |
+| `FILE_RETENTION_DAYS` | `30` | Tự xoá file âm thanh/phụ đề sau N ngày (hàm Modal `purge_old_files` chạy mỗi ngày; local dọn lúc khởi động). `0` = giữ mãi — khi đó phải sửa lại trang Bảo mật. |
 | `SYNC_MAX_CHARS` | `3000` | Giới hạn của `/api/tts`. Dài hơn thì dùng `/api/jobs`. |
 | `JOB_MAX_CHARS` | `100000` | Giới hạn của một job |
 | `API_KEYS` | trống | Key nội bộ không giới hạn, cách nhau bằng dấu phẩy (khách trả phí dùng License Key của Polar, không cần khai ở đây) |
@@ -572,9 +575,18 @@ Các endpoint khác của bản giả:
 
 Xem đầy đủ trong docstring của file.
 
+## Vận hành: CI, theo dõi, trần chi phí
+
+- **CI** (`.github/workflows/ci.yml`): mỗi lần push/PR chạy pytest (không cần mô hình), import `modal_app`, test proxy, kiểm tra hash CSP và cú pháp script deploy.
+- **Theo dõi uptime** (`.github/workflows/monitor.yml`): 15 phút một lần gọi trang chủ, `/api/health`, `/api/voices`, `/api/billing/plans`; lỗi thì GitHub gửi email cho bạn. **Bật bằng cách** vào repo → Settings → Secrets and variables → Actions → **Variables** → thêm `MONITOR_URL=https://dattts.com` (chưa đặt thì workflow tự bỏ qua). Lưu ý: lần kiểm tra sau khi máy nghỉ có thể làm Modal khởi động container `web` (rẻ, 1 CPU), không đụng tới worker giọng đọc.
+- **Trần chi phí gói miễn phí**: `FREE_GLOBAL_DAILY_CHARS` và `FREE_REQUESTS_PER_MIN` (bảng biến môi trường). Ngoài ra nên đặt **Spend limit** trong Modal (Settings → Usage and billing) làm chốt chặn cuối.
+- **Header bảo mật** cho trang tĩnh: `web/_headers` (CSP, HSTS, chống nhúng iframe). Sửa script inline trong HTML thì chạy `python3 scripts/csp_hashes.py` và cập nhật hash.
+- **SEO**: `web/robots.txt`, `web/sitemap.xml`, ảnh chia sẻ `web/og.png`, trang `web/404.html`.
+- **Giấy phép**: `NOTICE` ghi công các thành phần bên thứ ba. Repo **chưa có `LICENSE`** cho mã của chính DatTTS — bạn tự quyết (để riêng tư thì không cần; muốn mở mã thì thêm MIT/Apache-2.0).
+
 ## Việc còn phải làm (TODO)
 
-- **Tự xoá file cũ.** Blob trong Volume `dattts-files` hiện được giữ vô thời hạn, nên `web/bao-mat.html` chỉ hứa "lưu trong bộ nhớ đệm, xoá khi bạn yêu cầu qua support@dattts.com" (xoá tay). Nếu muốn hứa thời hạn cố định (ví dụ 30 ngày), trước hết thêm một hàm Modal chạy theo lịch (`@app.function(schedule=modal.Period(days=1))`) xoá blob cũ, kèm bản tương đương cho `LocalStore`, rồi mới sửa trang.
+- **Tự xoá file cũ: đã có.** Hàm Modal `purge_old_files` chạy 03:17 mỗi ngày (giờ VN), xoá file render cũ hơn `FILE_RETENTION_DAYS` (30) ngày; câu mẫu và sổ cái không bị đụng. Trang Bảo mật (EN + VI) đã ghi "30 ngày". Đổi số ngày thì sửa cả hai trang. Chạy tay: `modal run backend/modal_app.py::purge_old_files`.
 - **Điền tên pháp lý** thay cho `[Legal name]` (`web/terms.html`, `web/privacy.html`) và `[Tên pháp lý]` (`web/dieu-khoan.html`, `web/bao-mat.html`) trước khi gửi Polar duyệt tài khoản. Bản tiếng Anh là bản chính.
 - **Xoay Polar access token** (đã lộ trong chat) — xem "Việc bạn còn phải làm" ở phần Polar.
 - Chính sách hoàn tiền (`refund.html` / `hoan-tien.html`): gói tuần hoàn trong 3 ngày nếu dùng dưới 25.000 ký tự; gói tháng/năm hoàn trong 14 ngày nếu dùng dưới 100.000 ký tự (10% hạn mức một kỳ), tính **mọi ký tự đã dùng từ lúc trừ tiền tới lúc yêu cầu**, chỉ áp dụng lần mua đầu. Cách kiểm tra: xem mục "Quy trình hoàn tiền" bên dưới.

@@ -39,16 +39,16 @@
     <article class="doc">
       <div class="eyebrow" data-i18n="legal.eyebrow">Pháp lý</div>
       <h1>Chính sách bảo mật</h1>
-      <p class="updated">Cập nhật lần cuối: 08/11/2026</p>
+      <p class="updated">Cập nhật lần cuối: 14/11/2026</p>
       <p class="langnote"><span lang="en">English version: <a href="privacy.html">Privacy Policy</a></span>. Bản tiếng Anh là bản chính; nếu hai bản có điểm khác nhau, bản tiếng Anh được áp dụng.</p>
 
       <p>Chính sách này giải thích DatTTS (dattts.com), do [Tên pháp lý] vận hành, thu thập và xử lý những dữ liệu nào, để làm gì và trong bao lâu. Chúng tôi chỉ thu thập những gì cần để dịch vụ chạy được và xử lý dữ liệu cá nhân theo quy định pháp luật Việt Nam về bảo vệ dữ liệu cá nhân, cùng GDPR và các luật tương tự khi áp dụng với bạn.</p>
-      <div class="callout"><b>Tóm tắt:</b> không cần tài khoản; văn bản chỉ dùng để tạo giọng đọc; file tạo ra được lưu trong bộ nhớ đệm để bạn nghe lại và bạn có thể yêu cầu xoá bất kỳ lúc nào; thanh toán và email mua hàng do Polar xử lý; chúng tôi không bán dữ liệu và không dùng văn bản của bạn để huấn luyện mô hình.</div>
+      <div class="callout"><b>Tóm tắt:</b> không cần tài khoản; văn bản chỉ dùng để tạo giọng đọc; file tạo ra được lưu 30 ngày để bạn nghe lại rồi tự động xoá (hoặc xoá sớm hơn nếu bạn yêu cầu); thanh toán và email mua hàng do Polar xử lý; chúng tôi không bán dữ liệu và không dùng văn bản của bạn để huấn luyện mô hình.</div>
 
       <h2>1. Dữ liệu chúng tôi xử lý</h2>
       <ul>
         <li><b>Văn bản và tuỳ chọn bạn gửi</b> (giọng, tốc độ, định dạng, từ điển phát âm): được xử lý để tạo âm thanh và phụ đề. Văn bản đi kèm file kết quả (trong phụ đề và thông tin mốc thời gian) và được lưu cùng file trong bộ nhớ đệm.</li>
-        <li><b>File âm thanh và phụ đề</b>: lưu trong bộ nhớ đệm để bạn nghe lại, tải định dạng khác mà không bị tính thêm ký tự. Bạn có thể <b>yêu cầu xoá</b> bất kỳ lúc nào qua <a href="mailto:support@dattts.com">support@dattts.com</a> (gửi kèm đường dẫn file). Ai có đường dẫn file đều mở được file; đường dẫn chứa mã khó đoán, nhưng đừng chia sẻ đường dẫn nếu nội dung nhạy cảm.</li>
+        <li><b>File âm thanh và phụ đề</b>: lưu trong <b>30 ngày</b> để bạn nghe lại, tải định dạng khác mà không bị tính thêm ký tự, sau đó tự động xoá. Hãy tải về những file bạn muốn giữ. Bạn cũng có thể <b>yêu cầu xoá</b> sớm hơn qua <a href="mailto:support@dattts.com">support@dattts.com</a> (gửi kèm đường dẫn file). Ai có đường dẫn file đều mở được file; đường dẫn chứa mã khó đoán, nhưng đừng chia sẻ đường dẫn nếu nội dung nhạy cảm.</li>
         <li><b>Địa chỉ IP</b>: dùng để đếm lượt miễn phí theo ngày, giới hạn số lần kiểm tra API key và tạo phiên thanh toán, và chống lạm dụng. Chúng tôi lưu bộ đếm theo ngày, giờ và phút, không gắn IP với danh tính của bạn.</li>
         <li><b>API key</b>: khi bạn gửi key, máy chủ hỏi Polar để xác thực và lưu kết quả trong bộ đệm theo bản băm (SHA-256) của key, không lưu key gốc. Mục bộ đệm gồm mã license key Polar, mã khách hàng Polar, gói đang dùng và email Polar có của bạn.</li>
         <li><b>Sổ ghi lượt dùng</b>: với mỗi license key, chúng tôi lưu số ký tự đã dùng theo ngày và theo kỳ, thời điểm dùng lần đầu và gần nhất, kèm mã khách hàng Polar (không lưu văn bản, không lưu email). Sổ này dùng để tính hạn mức và xét yêu cầu hoàn tiền.</li>
@@ -80,7 +80,7 @@
       <div class="tblwrap"><table>
         <thead><tr><th>Dữ liệu</th><th>Thời gian lưu</th></tr></thead>
         <tbody>
-          <tr><td>File âm thanh, phụ đề và văn bản đi kèm</td><td>Trong bộ nhớ đệm cho tới khi bạn yêu cầu xoá qua support@dattts.com</td></tr>
+          <tr><td>File âm thanh, phụ đề và văn bản đi kèm</td><td>30 ngày kể từ lúc tạo, sau đó tự động xoá (dọn mỗi ngày một lần); sớm hơn nếu bạn yêu cầu qua support@dattts.com</td></tr>
           <tr><td>Bộ đếm lượt miễn phí và giới hạn tần suất theo IP</td><td>Đếm theo ngày, giờ hoặc phút; bộ đếm tự xoá khoảng 7 ngày sau lần dùng cuối</td></tr>
           <tr><td>Bộ đệm xác thực (bản băm key, mã license key, mã khách hàng, gói, email)</td><td>Hỏi lại Polar mỗi 10 phút khi key đang được dùng; xoá ngay khi Polar báo gói thay đổi hoặc bị thu hồi, nếu không thì tự xoá khoảng 7 ngày sau lần dùng key cuối</td></tr>
           <tr><td>Sổ ghi lượt dùng theo key (ký tự theo ngày và theo kỳ, mã khách hàng)</td><td>Giữ trong thời gian gói còn hiệu lực và sau đó để xử lý thanh toán, hoàn tiền và khiếu nại; không tự xoá, chúng tôi xoá khi bạn yêu cầu qua support@dattts.com sau khi gói đã kết thúc</td></tr>

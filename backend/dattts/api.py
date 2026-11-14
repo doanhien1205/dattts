@@ -489,7 +489,20 @@ def create_app(renderer, store, settings: Settings | None = None, *, polar: Pola
             return billing.charge(w, chars), chars
         qk = quota_key(request)
         limit = int(settings.free_daily_chars)
+        rpm = int(settings.free_requests_per_min or 0)
+        if rpm > 0:
+            rk = f"rl:tts:{today_vn():%Y-%m-%dT%H:%M}:{limit_ip(request)}"
+            if store.kv_incr(rk, 1) > rpm:
+                raise ApiError("rate_limited", status=429, key="rate_limited.free", headers={"Retry-After": "60"})
         new = store.kv_incr(qk, chars)
+        cap = int(settings.free_global_daily_chars or 0)
+        if new <= limit and cap > 0:
+            # Trần chung toàn hệ thống: trừ sau quota IP để người đã hết quota riêng không ăn vào trần chung.
+            gk = free_total_key(qk)
+            if store.kv_incr(gk, chars) > cap:
+                store.kv_incr(gk, -chars)
+                store.kv_incr(qk, -chars)
+                raise ApiError("quota_exceeded", status=429, key="quota_exceeded.free_capacity")
         if new > limit:
             store.kv_incr(qk, -chars)
             remaining = max(0, limit - (new - chars))
@@ -500,8 +513,14 @@ def create_app(renderer, store, settings: Settings | None = None, *, polar: Pola
                            params={"remaining": remaining, "chars": int(chars)})
         return qk, chars
 
+    def free_total_key(qk: str) -> str:
+        # qk = "quota:<YYYY-MM-DD>:ip:<ip>" → bộ đếm chung của đúng ngày đó (hoàn tiền qua nửa đêm vẫn đúng ngày).
+        return f"quota:{qk.split(':', 2)[1]}:free_total"
+
     def refund(qk: str | None, chars: int) -> None:
         if qk and chars:
+            if qk.startswith("quota:") and ":ip:" in qk and int(settings.free_global_daily_chars or 0) > 0:
+                store.kv_incr(free_total_key(qk), -int(chars))
             billing.refund(qk, chars)  # key Polar: hoàn cả bucket kỳ lẫn sổ cái lâu dài; IP: chỉ bucket
 
     # ---------- kết quả ----------

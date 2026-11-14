@@ -1,6 +1,6 @@
 // Kiểm thử đầu-cuối DatTTS với máy chủ thật (engine VieNeu). Giao diện mặc định tiếng Anh (trình duyệt en-US),
 // có kiểm tra nút chuyển EN | VI, ?lang=, locale vi-VN và header Accept-Language.
-//   cd backend && python server_local.py --port 8765 &
+//   cd backend && FREE_REQUESTS_PER_MIN=0 python server_local.py --port 8765 &
 //   node scripts/e2e.mjs                      # E2E_BASE mặc định http://127.0.0.1:8765
 // Biến môi trường: E2E_BASE, E2E_OUT (ghi danh sách id file đã tạo ra JSON), E2E_SHOTS (thư mục ảnh chụp).
 import { createRequire } from 'node:module';

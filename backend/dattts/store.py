@@ -56,6 +56,34 @@ def safe_blob_name(name: str) -> str:
     return name
 
 
+# File do render sinh ra: <20 hex>.<mp3|wav|ogg|srt|vtt|json>. Câu mẫu (sample-*) và sổ cái (ledger-*) KHÔNG khớp.
+_RENDER_FILE = re.compile(r"[0-9a-f]{20}\.(mp3|wav|ogg|srt|vtt|json)")
+
+
+def purge_old_files(directory: str | os.PathLike, max_age_days: float, now: float | None = None) -> int:
+    """Xoá file render cũ hơn ``max_age_days`` (theo mtime) trong ``directory``; trả số file đã xoá.
+
+    Chỉ đụng file khớp ``_RENDER_FILE``; ``max_age_days`` <= 0 → không xoá gì. File bị xoá sẽ được dựng lại
+    (và tính quota lại) nếu có người yêu cầu đúng nội dung đó lần nữa.
+    """
+    if not max_age_days or max_age_days <= 0:
+        return 0
+    cutoff = (time.time() if now is None else now) - float(max_age_days) * 86400
+    n = 0
+    try:
+        entries = list(os.scandir(directory))
+    except FileNotFoundError:
+        return 0
+    for e in entries:
+        try:
+            if e.is_file(follow_symlinks=False) and _RENDER_FILE.fullmatch(e.name) and e.stat().st_mtime < cutoff:
+                os.unlink(e.path)
+                n += 1
+        except OSError:
+            continue
+    return n
+
+
 # ───────────────────────────── Store ─────────────────────────────
 
 
@@ -163,6 +191,10 @@ class LocalStore:
             return self._path(name).is_file()
         except ValueError:
             return False
+
+    def blob_purge(self, max_age_days: float, now: float | None = None) -> int:
+        """Xoá file render cũ (xem ``purge_old_files``)."""
+        return purge_old_files(self.files, max_age_days, now)
 
 
 class ModalStore:
@@ -328,6 +360,17 @@ class ModalStore:
 
     def blob_exists(self, name: str) -> bool:
         return self.blob_path(name) is not None
+
+    def blob_purge(self, max_age_days: float, now: float | None = None) -> int:
+        """Xoá file render cũ trong Volume rồi commit (xem ``purge_old_files``)."""
+        try:
+            self.volume.reload()
+        except Exception as e:  # pragma: no cover - chỉ chạy trên Modal
+            log.warning("volume.reload() lỗi trước khi dọn: %s", e)
+        n = purge_old_files(self.mount, max_age_days, now)
+        if n:
+            self._commit()
+        return n
 
 
 # ───────────────────────────── Dùng chung ─────────────────────────────

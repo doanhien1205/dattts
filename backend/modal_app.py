@@ -291,6 +291,30 @@ def download_models() -> dict:
 
 @app.function(
     image=web_image,
+    cpu=0.25,
+    memory=512,
+    timeout=15 * 60,
+    volumes={FILES_DIR: files_volume},
+    secrets=[secret],
+    schedule=modal.Cron("17 20 * * *"),  # 03:17 giờ Việt Nam mỗi ngày
+)
+def purge_old_files() -> dict:
+    """Xoá file âm thanh/phụ đề đã dựng cũ hơn ``FILE_RETENTION_DAYS`` (mặc định 30; 0 = giữ mãi).
+
+    Không đụng câu mẫu giọng và sổ cái lượt dùng. Chạy tay: ``modal run modal_app.py::purge_old_files``.
+    """
+    from dattts.settings import Settings
+    from dattts.store import ModalStore
+
+    days = Settings.from_env().file_retention_days
+    n = ModalStore(mount=FILES_DIR).blob_purge(days)
+    info = {"deleted": n, "retention_days": days}
+    print(info)
+    return info
+
+
+@app.function(
+    image=web_image,
     cpu=1,
     memory=2048,
     scaledown_window=600,

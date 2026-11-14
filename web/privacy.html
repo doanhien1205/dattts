@@ -39,16 +39,16 @@
     <article class="doc">
       <div class="eyebrow" data-i18n="legal.eyebrow">Legal</div>
       <h1>Privacy Policy</h1>
-      <p class="updated">Last updated: November 8, 2026</p>
+      <p class="updated">Last updated: November 14, 2026</p>
       <p class="langnote"><span lang="vi">Đọc bằng tiếng Việt: <a href="bao-mat.html">Chính sách bảo mật</a></span>. This English version is the governing version.</p>
 
       <p>This policy explains what data DatTTS (dattts.com), operated by [Legal name], collects and processes, why, and for how long. We collect only what the service needs to work, and we process personal data in line with Vietnam’s personal data protection law and, where it applies to you, the GDPR and similar laws.</p>
-      <div class="callout"><b>In short:</b> no account needed; your text is used only to generate speech; generated files are cached so you can replay them, and you can ask us to delete them anytime; payments and purchase emails are handled by Polar; we never sell data and never train models on your text.</div>
+      <div class="callout"><b>In short:</b> no account needed; your text is used only to generate speech; generated files are cached for 30 days so you can replay them, then deleted automatically (or sooner if you ask); payments and purchase emails are handled by Polar; we never sell data and never train models on your text.</div>
 
       <h2>1. Data we process</h2>
       <ul>
         <li><b>Text and options you submit</b> (voice, speed, format, pronunciation dictionary): processed to generate audio and subtitles. The text is embedded in the result (subtitles and timing data) and cached together with the file.</li>
-        <li><b>Audio and subtitle files</b>: cached so you can replay them and download other formats without using more characters. You can <b>ask us to delete them</b> anytime at <a href="mailto:support@dattts.com">support@dattts.com</a> (include the file link). Anyone with a file link can open the file; links contain a hard-to-guess ID, but don’t share them if the content is sensitive.</li>
+        <li><b>Audio and subtitle files</b>: cached for <b>30 days</b> so you can replay them and download other formats without using more characters, then deleted automatically. Download anything you want to keep. You can also <b>ask us to delete them</b> sooner at <a href="mailto:support@dattts.com">support@dattts.com</a> (include the file link). Anyone with a file link can open the file; links contain a hard-to-guess ID, but don’t share them if the content is sensitive.</li>
         <li><b>IP address</b>: used to count the free daily allowance, rate-limit API key checks and checkout sessions, and prevent abuse. We keep daily, hourly and per-minute counters and don’t link IP addresses to your identity.</li>
         <li><b>API key</b>: when you send a key, our server asks Polar to validate it and caches the result under a SHA-256 hash of the key, never the key itself. The cache entry holds the Polar license key ID, your Polar customer ID, your plan and the email address Polar has for you.</li>
         <li><b>Usage records</b>: for each license key we keep the number of characters used per day and per billing period, with the first and last time it was used and your Polar customer ID (not your text and not your email). We need these to apply allowances and to check refund requests.</li>
@@ -80,7 +80,7 @@
       <div class="tblwrap"><table>
         <thead><tr><th>Data</th><th>Retention</th></tr></thead>
         <tbody>
-          <tr><td>Audio, subtitle files and their text</td><td>In cache until you ask us to delete them via support@dattts.com</td></tr>
+          <tr><td>Audio, subtitle files and their text</td><td>30 days after they were generated, then deleted automatically (a daily clean-up job); sooner if you ask via support@dattts.com</td></tr>
           <tr><td>Free-allowance and rate-limit counters per IP</td><td>Counted per day, hour or minute; the stored counters are removed automatically about 7 days after they were last used</td></tr>
           <tr><td>Validation cache (key hash, license key ID, customer ID, plan, email)</td><td>Re-checked with Polar every 10 minutes while the key is in use; cleared at once when Polar tells us the subscription changed or was revoked, otherwise removed automatically about 7 days after the key was last used</td></tr>
           <tr><td>Usage records per key (characters per day and per period, customer ID)</td><td>Kept while your subscription is active and afterwards for billing, refund and dispute handling; there is no automatic deletion, and we delete them when you ask us at support@dattts.com after your subscription has ended</td></tr>

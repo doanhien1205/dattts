@@ -48,6 +48,13 @@ def _default_web_dir() -> str | None:
 @dataclass
 class Settings:
     free_daily_chars: int = 20000
+    # Trần TỔNG ký tự miễn phí mỗi ngày cho toàn hệ thống (chặn hoá đơn máy tăng vô hạn khi bị lạm dụng
+    # bằng nhiều IP); 0 = không giới hạn. Khách trả phí và key nội bộ không bị ảnh hưởng.
+    free_global_daily_chars: int = 1000000
+    # Số lượt tạo giọng (/api/tts + /api/jobs) mỗi phút cho mỗi IP không có key; 0 = không giới hạn.
+    free_requests_per_min: int = 12
+    # Tự xoá file âm thanh/phụ đề đã dựng sau N ngày (0 = giữ mãi). Không đụng câu mẫu và sổ cái.
+    file_retention_days: int = 30
     sync_max_chars: int = 3000
     job_max_chars: int = 100000
     api_keys: frozenset[str] = field(default_factory=frozenset)
@@ -155,6 +162,9 @@ class Settings:
         e = os.environ if env is None else env
         s = cls(
             free_daily_chars=_int(e.get("FREE_DAILY_CHARS"), 20000),
+            free_global_daily_chars=max(0, _int(e.get("FREE_GLOBAL_DAILY_CHARS"), 1000000)),
+            free_requests_per_min=max(0, _int(e.get("FREE_REQUESTS_PER_MIN"), 12)),
+            file_retention_days=max(0, _int(e.get("FILE_RETENTION_DAYS"), 30)),
             sync_max_chars=_int(e.get("SYNC_MAX_CHARS"), 3000),
             job_max_chars=_int(e.get("JOB_MAX_CHARS"), 100000),
             api_keys=frozenset(_split(e.get("API_KEYS"))),

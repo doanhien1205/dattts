@@ -582,6 +582,7 @@ Xem đầy đủ trong docstring của file.
 - **Trần chi phí gói miễn phí**: `FREE_GLOBAL_DAILY_CHARS` và `FREE_REQUESTS_PER_MIN` (bảng biến môi trường). Ngoài ra nên đặt **Spend limit** trong Modal (Settings → Usage and billing) làm chốt chặn cuối.
 - **Header bảo mật** cho trang tĩnh: `web/_headers` (CSP, HSTS, chống nhúng iframe). Sửa script inline trong HTML thì chạy `python3 scripts/csp_hashes.py` và cập nhật hash.
 - **SEO**: `web/robots.txt`, `web/sitemap.xml`, ảnh chia sẻ `web/og.png`, trang `web/404.html`.
+- **Trang chủ tiếng Việt cho SEO: `/vi/`** (`web/vi/index.html`). Đây là **file sinh tự động** từ `web/index.html` + chuỗi VI trong `web/i18n.js`: sau khi sửa một trong hai file đó, chạy `node scripts/build_vi.mjs` rồi commit cả file sinh ra (CI kiểm tra bằng `--check`). `/` là tiếng Anh, `/vi/` luôn là tiếng Việt kể cả khi tắt JavaScript; hai trang khai báo `hreflang` qua lại, trang pháp lý EN/VI cũng vậy, và `sitemap.xml` liệt kê đủ. Kiểm thử: `node scripts/e2e_vi.mjs` (máy chủ `--fake` là đủ). Sau khi deploy, vào Google Search Console → thêm `dattts.com` → gửi `https://dattts.com/sitemap.xml`.
 - **Giấy phép**: `NOTICE` ghi công các thành phần bên thứ ba. Repo **chưa có `LICENSE`** cho mã của chính DatTTS — bạn tự quyết (để riêng tư thì không cần; muốn mở mã thì thêm MIT/Apache-2.0).
 
 ## Việc còn phải làm (TODO)

@@ -34,6 +34,8 @@ jobs:
         run: python -c "import modal_app"
       - name: Proxy function tests
         run: node scripts/test_proxy.mjs
+      - name: Vietnamese static page is up to date
+        run: node scripts/build_vi.mjs --check
       - name: CSP hashes match inline scripts
         run: python3 scripts/csp_hashes.py
       - name: Shell script syntax

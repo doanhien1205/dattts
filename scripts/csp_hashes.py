@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Kiểm tra web/_headers có đủ hash CSP cho mọi script inline trong web/*.html.
+"""Kiểm tra web/_headers có đủ hash CSP cho mọi script inline trong web/**/*.html.
 
     python3 scripts/csp_hashes.py          # thoát mã 1 và in hash còn thiếu nếu lệch
 """
@@ -12,7 +12,7 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 want = set()
-for f in sorted(glob.glob(os.path.join(ROOT, "web", "*.html"))):
+for f in sorted(glob.glob(os.path.join(ROOT, "web", "**", "*.html"), recursive=True)):
     html = open(f, encoding="utf-8").read()
     for m in re.finditer(r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", html, re.S):
         want.add("'sha256-" + base64.b64encode(hashlib.sha256(m.group(1).encode()).digest()).decode() + "'")

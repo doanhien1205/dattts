@@ -14,6 +14,9 @@
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="canonical" href="https://dattts.com/">
+<link rel="alternate" hreflang="en" href="https://dattts.com/">
+<link rel="alternate" hreflang="vi" href="https://dattts.com/vi/">
+<link rel="alternate" hreflang="x-default" href="https://dattts.com/">
 <meta name="theme-color" content="#D63A6E">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='10' fill='%23D63A6E'/%3E%3Cpath d='M24 9v22M24 22.5a6.5 6.5 0 1 1 0-.01' stroke='%23fff' stroke-width='3.2' fill='none' stroke-linecap='round'/%3E%3Cpath d='M19 13.5h9' stroke='%23E7A422' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -65,7 +68,7 @@
           <span class="qtrack" aria-hidden="true"><span id="quotaFill"></span></span>
         </div>
         <button class="btn btn-ghost btn-sm keybtn online-only" id="keyBtn" type="button" aria-haspopup="dialog">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12 20 3m-3 3 3 3m-6 0 2 2"/></svg><span id="keyBtnLabel">Enter API key</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12 20 3m-3 3 3 3m-6 0 2 2"/></svg><span id="keyBtnLabel" data-i18n="key.btnEnter">Enter API key</span>
         </button>
       </div>
 
@@ -144,7 +147,7 @@
           </fieldset>
           <canvas id="wave" aria-hidden="true"></canvas>
           <div class="actions">
-            <button class="btn btn-primary" id="genBtn" type="button"><span class="spinner" aria-hidden="true"></span><svg class="gicon" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2 1l11 6-11 6z" fill="currentColor"/></svg><span id="genLabel">Generate voice</span></button>
+            <button class="btn btn-primary" id="genBtn" type="button"><span class="spinner" aria-hidden="true"></span><svg class="gicon" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2 1l11 6-11 6z" fill="currentColor"/></svg><span id="genLabel" data-i18n="gen.label">Generate voice</span></button>
             <button class="btn btn-ghost offline-only" id="stopBtn" type="button" data-i18n="controls.stop">Stop</button>
           </div>
           <div class="progress" id="progress" hidden>
@@ -250,7 +253,7 @@
         <div class="price" id="freePrice">$0</div>
         <p class="per-note" data-i18n="plan.free.sub">Free forever · no sign-up</p>
         <ul>
-          <li id="freeQuota">20,000 characters per day</li>
+          <li id="freeQuota" data-ssg-vi="plan.quota.day;n=20.000">20,000 characters per day</li>
           <li data-i18n="plan.f.voices">All 25 voices, North, Central and South</li>
           <li data-i18n="plan.f.formats">MP3, WAV, OGG with SRT and VTT subtitles</li>
           <li data-i18n="plan.f.multi">Multi-voice scripts and pronunciation dictionary</li>
@@ -264,7 +267,7 @@
         <p class="per-note" id="proBilled" hidden></p>
         <p class="vnd" data-vnd hidden></p>
         <ul>
-          <li id="proQuota">1,000,000 characters per month</li>
+          <li id="proQuota" data-ssg-vi="plan.quota.month;n=1.000.000">1,000,000 characters per month</li>
           <li data-i18n="plan.f.long">Up to 100,000 characters per request</li>
           <li data-i18n="plan.f.api">API key for the studio and the REST API</li>
           <li data-i18n="plan.f.nolimit">No daily or per-IP limits</li>

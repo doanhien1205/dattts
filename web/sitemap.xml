@@ -1,10 +1,53 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://dattts.com/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
-  <url><loc>https://dattts.com/terms.html</loc><changefreq>yearly</changefreq></url>
-  <url><loc>https://dattts.com/privacy.html</loc><changefreq>yearly</changefreq></url>
-  <url><loc>https://dattts.com/refund.html</loc><changefreq>yearly</changefreq></url>
-  <url><loc>https://dattts.com/dieu-khoan.html</loc><changefreq>yearly</changefreq></url>
-  <url><loc>https://dattts.com/bao-mat.html</loc><changefreq>yearly</changefreq></url>
-  <url><loc>https://dattts.com/hoan-tien.html</loc><changefreq>yearly</changefreq></url>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+  <url>
+    <loc>https://dattts.com/</loc>
+    <changefreq>weekly</changefreq>
+    <xhtml:link rel="alternate" hreflang="en" href="https://dattts.com/"/>
+    <xhtml:link rel="alternate" hreflang="vi" href="https://dattts.com/vi/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://dattts.com/"/>
+  </url>
+  <url>
+    <loc>https://dattts.com/vi/</loc>
+    <changefreq>weekly</changefreq>
+    <xhtml:link rel="alternate" hreflang="en" href="https://dattts.com/"/>
+    <xhtml:link rel="alternate" hreflang="vi" href="https://dattts.com/vi/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://dattts.com/"/>
+  </url>
+  <url>
+    <loc>https://dattts.com/terms.html</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://dattts.com/terms.html"/>
+    <xhtml:link rel="alternate" hreflang="vi" href="https://dattts.com/dieu-khoan.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://dattts.com/terms.html"/>
+  </url>
+  <url>
+    <loc>https://dattts.com/dieu-khoan.html</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://dattts.com/terms.html"/>
+    <xhtml:link rel="alternate" hreflang="vi" href="https://dattts.com/dieu-khoan.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://dattts.com/terms.html"/>
+  </url>
+  <url>
+    <loc>https://dattts.com/privacy.html</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://dattts.com/privacy.html"/>
+    <xhtml:link rel="alternate" hreflang="vi" href="https://dattts.com/bao-mat.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://dattts.com/privacy.html"/>
+  </url>
+  <url>
+    <loc>https://dattts.com/bao-mat.html</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://dattts.com/privacy.html"/>
+    <xhtml:link rel="alternate" hreflang="vi" href="https://dattts.com/bao-mat.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://dattts.com/privacy.html"/>
+  </url>
+  <url>
+    <loc>https://dattts.com/refund.html</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://dattts.com/refund.html"/>
+    <xhtml:link rel="alternate" hreflang="vi" href="https://dattts.com/hoan-tien.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://dattts.com/refund.html"/>
+  </url>
+  <url>
+    <loc>https://dattts.com/hoan-tien.html</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://dattts.com/refund.html"/>
+    <xhtml:link rel="alternate" hreflang="vi" href="https://dattts.com/hoan-tien.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://dattts.com/refund.html"/>
+  </url>
 </urlset>

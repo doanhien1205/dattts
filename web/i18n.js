@@ -2,7 +2,8 @@
    Thứ tự chọn ngôn ngữ: ?lang= > lựa chọn đã lưu (localStorage dattts.lang) > navigator.language "vi*" → vi > en.
    Phần tử tĩnh: data-i18n="key" (textContent), data-i18n-html="key" (innerHTML, chuỗi do ta viết),
    data-i18n-attr="attr:key;attr2:key2", data-href-vi="trang-viet.html" (link đổi theo ngôn ngữ).
-   Trang pháp lý có bản riêng cho từng ngôn ngữ: <html data-page-lang="en" data-alt-href="dieu-khoan.html">. */
+   Trang pháp lý có bản riêng cho từng ngôn ngữ: <html data-page-lang="en" data-alt-href="dieu-khoan.html">.
+   Trang chủ tiếng Việt tĩnh cho SEO: /vi/ (sinh bằng scripts/build_vi.mjs) = <html data-page-lang="vi" data-alt-href="/" data-root="/">. */
 (function () {
   'use strict';
 
@@ -962,6 +963,17 @@
         var j = pair.indexOf(':'); if (j < 0) return;
         els[i].setAttribute(pair.slice(0, j).trim(), t(pair.slice(j + 1).trim()));
       });
+    }
+    // Trang nằm trong thư mục con (/vi/, <html data-root="/">): link tương đối trong chuỗi i18n tính từ gốc site.
+    var base = root.getAttribute('data-root');
+    if (base) {
+      els = scope.querySelectorAll('[data-i18n-html] a[href], [data-i18n-html] a[data-href-vi]');
+      for (i = 0; i < els.length; i++) {
+        ['href', 'data-href-vi', 'data-href-en'].forEach(function (n) {
+          var v = els[i].getAttribute(n);
+          if (v && !/^(#|\/|[a-z][a-z0-9+.-]*:)/i.test(v)) els[i].setAttribute(n, base + v.replace(/^\.\//, ''));
+        });
+      }
     }
     // link có hai bản (ví dụ trang pháp lý EN/VI)
     els = scope.querySelectorAll('[data-href-vi]');
